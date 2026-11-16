@@ -1,0 +1,82 @@
+{
+  "scope": "runtime dependencies actually redistributed",
+  "packages": [
+    {
+      "name": "argparse",
+      "version": "2.0.1",
+      "license": "Python-2.0",
+      "files": [
+        {
+          "path": "licenses/argparse-2.0.1-LICENSE",
+          "sha256": "de4d1f2d2ad5ad0cfd1657a106476b31cb5db5ef9d1ff842b237c0c81f0c8a23"
+        }
+      ]
+    },
+    {
+      "name": "entities",
+      "version": "4.5.0",
+      "license": "BSD-2-Clause",
+      "files": [
+        {
+          "path": "licenses/entities-4.5.0-LICENSE",
+          "sha256": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164"
+        }
+      ]
+    },
+    {
+      "name": "linkify-it",
+      "version": "5.0.2",
+      "license": "MIT",
+      "files": [
+        {
+          "path": "licenses/linkify-it-5.0.2-LICENSE",
+          "sha256": "95e3f7f0e81e9b4940cdfaa1956aaff5e4dfd2fb1565041e7c78eb9a606f23e3"
+        }
+      ]
+    },
+    {
+      "name": "markdown-it",
+      "version": "14.3.3",
+      "license": "MIT",
+      "files": [
+        {
+          "path": "licenses/markdown-it-14.3.3-LICENSE",
+          "sha256": "792c48c5a849a15fdf9e37e8bcf9e6d1dd13b32b46c642a748a0a46a9919d473"
+        }
+      ]
+    },
+    {
+      "name": "mdurl",
+      "version": "2.1.0",
+      "license": "MIT",
+      "files": [
+        {
+          "path": "licenses/mdurl-2.1.0-LICENSE",
+          "sha256": "6b6a356c4337e2446841f30f3cdf7e7023af8c5260b5e347c0f987b9f6aa2644"
+        }
+      ]
+    },
+    {
+      "name": "punycode.js",
+      "version": "2.3.1",
+      "license": "MIT",
+      "files": [
+        {
+          "path": "licenses/punycode.js-2.3.1-LICENSE-MIT.txt",
+          "sha256": "483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a"
+        }
+      ]
+    },
+    {
+      "name": "uc.micro",
+      "version": "2.1.0",
+      "license": "MIT",
+      "files": [
+        {
+          "path": "licenses/uc.micro-2.1.0-LICENSE.txt",
+          "sha256": "483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a"
+        }
+      ]
+    }
+  ]
+}

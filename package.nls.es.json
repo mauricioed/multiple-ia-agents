@@ -1,0 +1,21 @@
+{
+    "ui.1": "Nuevo chat",
+    "ui.2": "Mostrar IA Agents (sin medidores)",
+    "ui.3": "Actualizar archivos del chat",
+    "ui.4": "Abrir archivo del chat",
+    "ui.5": "Abrir Markdown en editor flotante",
+    "ui.6": "Reabrir chat cerrado",
+    "ui.7": "Abrir Markdown seleccionado en ventana flotante",
+    "ui.8": "Abrir chat",
+    "ui.9": "Cerrar chat",
+    "ui.10": "IA Agents",
+    "ui.11": "IA Agents",
+    "ui.13": "Archivos del chat",
+    "ui.14": "Ruta opcional al Codex instalado por el usuario.",
+    "ui.16": "Ruta opcional al Ollama instalado por el usuario.",
+    "ui.17": "Nuevo chat con agente",
+    "extension.description": "Paneles independientes de Codex y Ollama y acceso al chat oficial de Claude.",
+    "ui.18": "Nueva terminal con agente",
+    "ui.19": "Terminal sin agente",
+    "ui.20": "Ruta opcional al ejecutable de Claude instalado por el usuario, solo para sesiones de terminal."
+}

@@ -1,0 +1,15 @@
+node_modules/
+*.vsix
+.test-*
+.env
+.env.*
+!.env.example
+.aws/
+.codex/
+.claude/
+*.pem
+*.key
+*.log
+artifacts/
+dist/
+.project-created.json

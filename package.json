@@ -1,0 +1,311 @@
+{
+    "name": "multiple-ia-agents",
+    "displayName": "Multiple IA Agents",
+    "description": "%extension.description%",
+    "version": "0.1.10",
+    "publisher": "Mauricio",
+    "engines": {
+        "vscode": "^1.145.0"
+    },
+    "categories": [
+        "AI",
+        "Other"
+    ],
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/mauricioed/multiple-ia-agents.git"
+    },
+    "homepage": "https://github.com/mauricioed/multiple-ia-agents#readme",
+    "bugs": {
+        "url": "https://github.com/mauricioed/multiple-ia-agents/issues"
+    },
+    "main": "./src/extension.js",
+    "capabilities": {
+        "untrustedWorkspaces": {
+            "supported": false
+        },
+        "virtualWorkspaces": false
+    },
+    "scripts": {
+        "check": "node scripts/check.cjs",
+        "test": "node --test \"test/*.js\"",
+        "package": "node scripts/package.cjs",
+        "verify:distribution": "node scripts/verify-distribution.cjs",
+        "licenses:generate": "node scripts/generate-notices.cjs",
+        "verify:privacy": "node scripts/verify-privacy.cjs",
+        "verify:history": "node scripts/verify-history.cjs",
+        "verify:vsix": "node scripts/verify-vsix.cjs"
+    },
+    "contributes": {
+        "commands": [
+            {
+                "command": "multipleIAAgents.new",
+                "title": "%ui.1%",
+                "category": "Multiple IA Agents",
+                "icon": "$(comment-discussion)"
+            },
+            {
+                "command": "multipleIAAgents.show",
+                "title": "%ui.2%",
+                "category": "Multiple IA Agents"
+            },
+            {
+                "command": "multipleIAAgents.refreshFiles",
+                "title": "%ui.3%",
+                "category": "Multiple IA Agents",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "multipleIAAgents.openChatFile",
+                "title": "%ui.4%",
+                "category": "Multiple IA Agents"
+            },
+            {
+                "command": "multipleIAAgents.previewMarkdown",
+                "title": "%ui.5%",
+                "category": "Multiple IA Agents"
+            },
+            {
+                "command": "multipleIAAgents.reopen",
+                "title": "%ui.6%",
+                "category": "Multiple IA Agents"
+            },
+            {
+                "command": "multipleIAAgents.openSelectedMarkdown",
+                "title": "%ui.7%",
+                "category": "Multiple IA Agents"
+            },
+            {
+                "command": "multipleIAAgents.new.codex",
+                "title": "Codex",
+                "category": "Multiple IA Agents"
+            },
+            {
+                "command": "multipleIAAgents.new.claude",
+                "title": "Claude",
+                "category": "Multiple IA Agents"
+            },
+            {
+                "command": "multipleIAAgents.new.ollama",
+                "title": "Ollama",
+                "category": "Multiple IA Agents"
+            },
+            {
+                "command": "multipleIAAgents.selectChat",
+                "title": "%ui.8%",
+                "category": "Multiple IA Agents"
+            },
+            {
+                "command": "multipleIAAgents.closeChat",
+                "title": "%ui.9%",
+                "category": "Multiple IA Agents",
+                "icon": "$(close)"
+            },
+            {
+                "command": "multipleIAAgents.newTerminal.codex",
+                "title": "Codex",
+                "category": "Multiple IA Agents"
+            },
+            {
+                "command": "multipleIAAgents.newTerminal.claude",
+                "title": "Claude",
+                "category": "Multiple IA Agents"
+            },
+            {
+                "command": "multipleIAAgents.newTerminal.ollama",
+                "title": "Ollama",
+                "category": "Multiple IA Agents"
+            },
+            {
+                "command": "multipleIAAgents.newTerminal.terminal",
+                "title": "%ui.19%",
+                "category": "Multiple IA Agents",
+                "icon": "$(terminal)"
+            }
+        ],
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "multipleIAAgents",
+                    "title": "%ui.10%",
+                    "icon": "media/chats.svg"
+                }
+            ]
+        },
+        "views": {
+            "multipleIAAgents": [
+                {
+                    "id": "multipleIAAgents.explorer",
+                    "name": "%ui.11%",
+                    "icon": "media/chats.svg",
+                    "type": "webview"
+                }
+            ]
+        },
+        "menus": {
+            "view/title": [
+                {
+                    "command": "multipleIAAgents.refreshFiles",
+                    "when": "view == multipleIAAgents.explorer",
+                    "group": "navigation@5"
+                },
+                {
+                    "submenu": "multipleIAAgents.newAgents",
+                    "when": "view == multipleIAAgents.explorer",
+                    "group": "navigation@2"
+                },
+                {
+                    "submenu": "multipleIAAgents.newTerminals",
+                    "when": "view == multipleIAAgents.explorer",
+                    "group": "navigation@4"
+                }
+            ],
+            "commandPalette": [
+                {
+                    "command": "multipleIAAgents.openChatFile",
+                    "when": "false"
+                },
+                {
+                    "command": "multipleIAAgents.previewMarkdown",
+                    "when": "false"
+                },
+                {
+                    "command": "multipleIAAgents.openSelectedMarkdown",
+                    "when": "false"
+                },
+                {
+                    "command": "multipleIAAgents.new.codex",
+                    "when": "false"
+                },
+                {
+                    "command": "multipleIAAgents.new.claude",
+                    "when": "false"
+                },
+                {
+                    "command": "multipleIAAgents.new.ollama",
+                    "when": "false"
+                },
+                {
+                    "command": "multipleIAAgents.selectChat",
+                    "when": "false"
+                },
+                {
+                    "command": "multipleIAAgents.closeChat",
+                    "when": "false"
+                },
+                {
+                    "command": "multipleIAAgents.newTerminal.codex",
+                    "when": "false"
+                },
+                {
+                    "command": "multipleIAAgents.newTerminal.claude",
+                    "when": "false"
+                },
+                {
+                    "command": "multipleIAAgents.newTerminal.ollama",
+                    "when": "false"
+                },
+                {
+                    "command": "multipleIAAgents.newTerminal.terminal",
+                    "when": "false"
+                }
+            ],
+            "multipleIAAgents.newAgents": [
+                {
+                    "command": "multipleIAAgents.new.codex",
+                    "group": "agents@0"
+                },
+                {
+                    "command": "multipleIAAgents.new.claude",
+                    "group": "agents@1"
+                },
+                {
+                    "command": "multipleIAAgents.new.ollama",
+                    "group": "agents@2"
+                }
+            ],
+            "multipleIAAgents.newTerminals": [
+                {
+                    "command": "multipleIAAgents.newTerminal.codex",
+                    "group": "agents@0"
+                },
+                {
+                    "command": "multipleIAAgents.newTerminal.claude",
+                    "group": "agents@1"
+                },
+                {
+                    "command": "multipleIAAgents.newTerminal.ollama",
+                    "group": "agents@2"
+                },
+                {
+                    "command": "multipleIAAgents.newTerminal.terminal",
+                    "group": "agents@3"
+                }
+            ]
+        },
+        "configuration": {
+            "title": "Multiple IA Agents",
+            "properties": {
+                "multipleIAAgents.executables.codex": {
+                    "type": "string",
+                    "default": "",
+                    "scope": "application",
+                    "restricted": true,
+                    "description": "%ui.14%"
+                },
+                "multipleIAAgents.executables.ollama": {
+                    "type": "string",
+                    "default": "",
+                    "scope": "application",
+                    "restricted": true,
+                    "description": "%ui.16%"
+                },
+                "multipleIAAgents.executables.claude": {
+                    "type": "string",
+                    "default": "",
+                    "scope": "application",
+                    "restricted": true,
+                    "description": "%ui.20%"
+                }
+            }
+        },
+        "submenus": [
+            {
+                "id": "multipleIAAgents.newAgents",
+                "label": "%ui.17%",
+                "icon": {
+                    "light": "media/chat-dropdown-light.svg",
+                    "dark": "media/chat-dropdown-dark.svg"
+                }
+            },
+            {
+                "id": "multipleIAAgents.newTerminals",
+                "label": "%ui.18%",
+                "icon": {
+                    "light": "media/terminal-dropdown-light.svg",
+                    "dark": "media/terminal-dropdown-dark.svg"
+                }
+            }
+        ]
+    },
+    "dependencies": {
+        "markdown-it": "14.3.3"
+    },
+    "devDependencies": {
+        "@vscode/vsce": "4.1.1",
+        "playwright-core": "1.64.1"
+    },
+    "extensionDependencies": [
+        "vscode.markdown-language-features",
+        "anthropic.claude-code"
+    ],
+    "activationEvents": [
+        "onWebviewPanel:multipleIAAgents.chat"
+    ],
+    "overrides": {
+        "@vscode/vsce": {
+            "minimatch": "11.0.1"
+        }
+    }
+}

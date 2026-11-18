@@ -1,71 +1,75 @@
 # Multiple AI Agent Chats
 
-A VS Code extension for managing Codex, Claude Code, and Ollama chats and native terminal sessions from one **IA Agents** sidebar. Each session is associated with a selected folder, and the explorer follows the active session. Use custom Codex and Ollama chat panels, the official Claude graphical chat, or an agent running in a terminal.
+![VS Code ^1.145.0](https://img.shields.io/badge/VS%20Code-%5E1.145.0-4377bd) ![Versión 0.1.19](https://img.shields.io/badge/versi%C3%B3n-0.1.19-655bd5) [![Licencia MIT](https://img.shields.io/badge/licencia-MIT-56964d)](LICENSE)
 
-This is an independent project. It is not an official product of, or endorsed by, OpenAI, Anthropic, or Ollama.
+Gestiona chats de Codex, Claude Code y Ollama y sesiones de terminal desde la barra lateral **AI Agents** de VS Code. Cada sesión se vincula a la carpeta que elijas. Al cambiar de sesión, el explorador muestra los archivos de la carpeta correspondiente.
 
-## Features
+Este proyecto es independiente de OpenAI, Anthropic y Ollama.
 
-- Custom chat panels for Codex and Ollama, with separate sessions, local history, and file attachments.
-- Two compact toolbar dropdowns: a chat icon with a right-hand arrow for **New chat with agent**, and a terminal icon with a right-hand arrow for **New terminal with agent**.
-- Native editor terminals for Codex, Claude, Ollama, or a shell without an agent, with independent folders, selection, and close/reopen behavior.
-- Launch the official Claude Code graphical chat using Anthropic's installed VS Code extension.
-- Browse the active session's folder, expand subfolders, and open files from the sidebar.
-- Open Markdown previews in a separate editor window.
-- Choose Codex permission modes and explicitly download Ollama models.
-- No account quota requests or custom session/weekly usage percentage bars.
-- English and Spanish interface translations.
+## Demostración
 
-## Requirements
+![Demostración de dos chats y una terminal con carpetas independientes, un archivo Markdown en una ventana flotante y el historial de cada chat.](https://raw.githubusercontent.com/mauricioed/multiple-ia-agents/main/media/demo-extension.gif)
 
-- VS Code **1.145 or later**, a local filesystem workspace, and Workspace Trust enabled.
-- **Codex:** install the official Codex CLI separately and complete its own sign-in process. If it cannot be found, set `multipleIAAgents.executables.codex` to its absolute executable path. A global npm installation using `bin/codex.js` also requires Node.js on `PATH`.
-- **Claude chat:** the official [Claude Code extension](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code). VS Code installs it as an extension dependency. Authentication, permissions, billing, and conversation history remain under the official extension's control.
-- **Claude terminal:** install the official Claude CLI separately. Native executables and global npm installations are detected, including npm installations under Node version managers. JavaScript CLI entries require Node.js on `PATH`. Set `multipleIAAgents.executables.claude` if automatic detection is unavailable.
-- **Ollama:** [install Ollama](https://ollama.com/download) separately. If needed, set `multipleIAAgents.executables.ollama` to the absolute executable path. The extension can use a local server on port 11434 or start its own local process on port 11435. A model must be installed before generating responses. Opening our chat does not install Ollama or download a model.
+## Funciones
 
-Provider executables, credentials, GPU libraries, and model weights are **not bundled** with this extension. Each user supplies their own provider access. Models have their own license and hardware requirements.
+- Abre varios chats de Codex u Ollama con historiales locales independientes y adjunta archivos de texto.
+- Abre el chat oficial de Claude desde **AI Agents** con la extensión de Anthropic.
+- Abre terminales de Codex, Claude u Ollama, o una terminal de comandos sin agente.
+- Explora la carpeta de la sesión activa, despliega subcarpetas y abre archivos. Los documentos Markdown se muestran en una ventana flotante.
+- Selecciona el modo de permisos de Codex y descarga modelos de Ollama cuando los necesites.
+- La interfaz está disponible en español e inglés.
 
-## Installation
+## Requisitos
 
-The extension identifier is `Mauricio.multiple-ia-agents`.
+- **VS Code 1.145 o posterior**, con un espacio de trabajo local y la confianza del espacio de trabajo habilitada.
+- **Codex.** Instala por separado la CLI oficial de Codex e inicia sesión. Si la extensión no encuentra el ejecutable, configura su ruta absoluta en `multipleIAAgents.executables.codex`. La instalación global de npm con `bin/codex.js` requiere Node.js en `PATH`.
+- **Chat de Claude.** VS Code instala la [extensión oficial de Claude Code](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code) como dependencia. La extensión de Anthropic gestiona la autenticación, los permisos, la facturación y el historial.
+- **Terminal de Claude.** Instala por separado la CLI oficial de Claude. La extensión detecta ejecutables nativos e instalaciones globales de npm, incluidas las gestionadas por un gestor de versiones de Node.js. Las entradas JavaScript requieren Node.js en `PATH`. Si la detección automática falla, configura `multipleIAAgents.executables.claude`.
+- **Ollama.** [Instala Ollama](https://ollama.com/download) por separado. Si hace falta, indica la ruta absoluta de su ejecutable en `multipleIAAgents.executables.ollama`. La extensión puede usar el servidor local del puerto 11434 o iniciar un proceso propio en el puerto 11435. Instala un modelo para generar respuestas.
 
-Build a VSIX from source using the commands below, then run **Extensions: Install from VSIX...** in VS Code and select the generated file under `artifacts/`. Reload VS Code after installing an update.
+Cada usuario configura su acceso a los proveedores e instala los ejecutables, bibliotecas de GPU y pesos de los modelos que necesite. Cada modelo tiene su propia licencia y sus propios requisitos de hardware.
 
-## Usage
+## Instalación
 
-1. Open **IA Agents** in the Activity Bar, or run **Multiple AI Agent Chats: Show IA Agents (no usage meters)** from the Command Palette.
-2. Click the **chat icon with its right-hand arrow** to open **New chat with agent**, then choose Codex, Claude, or Ollama. Use the **terminal icon with its right-hand arrow** for terminal sessions.
-3. Select the chat's folder. For Codex and Ollama, write in our custom panel; for Claude, use the official graphical panel.
-4. Select a chat or terminal in the sidebar to reveal it and browse its associated folder. Expand folders and open files; double-click Markdown files to open their preview.
-5. For Ollama, choose an installed model, or explicitly use **Download model** after installing the runtime. Review that model's license before using or distributing it.
+El identificador de la extensión es `Mauricio.multiple-ia-agents`. Puedes instalarla desde la vista **Extensiones** de VS Code. Para instalar un paquete compilado localmente, ejecuta **Extensiones: Instalar desde VSIX...**, elige el archivo de `artifacts/` y recarga VS Code.
 
-With an Ollama model that supports tool calling, ask the chat to find and read project documentation, such as Spec Kit specifications, or provide a specific file path. The tools can list folders and read UTF-8 text inside the chat folder. To request access elsewhere on your computer, specify a full local path. The chat shows the operation and the resolved path for one-time approval before sending any contents to the local Ollama server. Manual file attachments also work with models that lack tool support.
+## Uso
 
-Claude entries are launchers for the official panel, not a guaranteed one-to-one mapping to Anthropic conversation IDs. Closing a tracked official tab removes its linked entries from the active list; entries sharing that tab close together. The official extension controls any usage information it displays itself.
+1. Abre **AI Agents** en la barra de actividades o ejecuta **Multiple AI Agent Chats: Mostrar AI Agents (sin medidores)** desde la paleta de comandos.
+2. Pulsa la flecha del icono de chat para abrir **Nuevo chat con agente** y elige Codex, Claude u Ollama.
+3. Selecciona una carpeta. Codex y Ollama se abren en sus paneles de chat y Claude se abre en su panel oficial.
+4. Selecciona cualquier sesión de la barra lateral para volver a ella y explorar su carpeta. Haz doble clic en un archivo Markdown del árbol para abrirlo en una ventana flotante.
+5. En Ollama, elige un modelo instalado o pulsa **Descargar modelo**. Revisa la licencia del modelo antes de usarlo o distribuirlo.
+6. En un chat de Codex u Ollama, pulsa el icono del reloj y elige un mensaje para saltar a él. Para recuperar el historial de una conversación cerrada, ejecuta **Multiple AI Agent Chats: Reabrir chat cerrado** y selecciona la conversación.
 
-## Terminal sessions
+Si tu modelo de Ollama admite llamadas a herramientas, puedes pedirle que busque documentación del proyecto o darle la ruta de un archivo. Las herramientas permiten listar carpetas y leer archivos de texto UTF-8 dentro de la carpeta del chat. Para acceder a un archivo de fuera, indica su ruta absoluta. El chat muestra la ruta y pide tu aprobación para esa operación antes de enviar el contenido al servidor local de Ollama. También puedes adjuntar archivos manualmente.
 
-Use **New terminal with agent** in the IA Agents toolbar and choose Codex, Claude, Ollama, or **Shell (no agent)**. Select a folder; the terminal opens in the editor area with that folder as its initial working directory. Selecting its sidebar entry reveals the same terminal and switches the file explorer to its associated folder. Closing the terminal removes it from the active list; closing its list entry also disposes the terminal. Reopening a closed terminal starts a new process in the saved folder, not a restored terminal transcript. Changing directories inside the shell does not reassign the session's folder.
+Las entradas de Claude abren su panel oficial. Varias entradas pueden estar vinculadas a la misma pestaña, y se cierran juntas al cerrar esa pestaña.
 
-Agent terminals require the corresponding CLI to be installed separately. For Claude terminals, install the official Claude CLI and optionally configure `multipleIAAgents.executables.claude`; Claude chat entries continue to use the official graphical extension. An Ollama terminal asks for an installed model and runs it without downloading models automatically. A shell without an agent needs no provider executable. Authentication and interactive permissions stay with the installed tools; no credentials or executables are bundled.
+## Sesiones de terminal
 
-## Troubleshooting
+En **AI Agents**, pulsa la flecha del icono de terminal y elige **Nueva terminal con agente**. Selecciona Codex, Claude, Ollama o **Terminal sin agente**, y elige la carpeta de inicio. La terminal se abre en el área del editor. Al elegirla en la barra lateral, se muestra esa misma terminal y el árbol de su carpeta asociada.
 
-- **An agent executable cannot be found:** install its official CLI separately, then retry. If it is installed in a custom location, use the corresponding executable setting above. Select a native executable or a JavaScript entry point, not a shell wrapper such as a .cmd, .bat, or .ps1 file.
-- **Ollama terminal fails:** confirm Ollama is installed and that at least one model is available with **ollama list**. The terminal picker uses installed models and never downloads one automatically. Our Ollama chat can open without the runtime, but generating responses still requires a working installation and a model.
-- **Claude terminal fails:** the graphical Claude extension and the Claude CLI are separate requirements. A working official chat does not by itself guarantee the CLI is available. The terminal reuses the installed CLI's own authentication; no new API key is requested by this extension.
-- **New controls do not appear after an update:** run **Developer: Reload Window** from the Command Palette.
+Cerrar la terminal la retira de la lista activa. Cerrar su entrada en la lista también cierra la terminal. Reabrirla inicia un proceso nuevo en la carpeta guardada. Cambiar de directorio dentro de la terminal conserva la carpeta vinculada a la sesión.
 
-## Privacy and permissions
+Las terminales con agente usan la CLI instalada de cada proveedor. La terminal de Ollama usa un modelo ya instalado. **Terminal sin agente** usa una terminal de comandos del sistema.
 
-The extension adds no telemetry and does not read Claude authentication files. Provider tools manage their own authentication and may inherit the process environment. Custom chat histories, session names, and folder paths are stored locally in VS Code extension storage.
+## Solución de problemas
 
-Messages and selected attachments are sent to the chosen backend. Codex can execute commands or modify files according to the selected permissions. Ollama models are downloaded only after an explicit action. Do not send confidential material unless you are authorized to share it with that provider. See [PRIVACY.md](https://github.com/mauricioed/multiple-ia-agents/blob/HEAD/PRIVACY.md).
+- **La extensión no encuentra un ejecutable.** Instala la CLI oficial del agente. Si la instalaste en una ubicación personalizada, configura la ruta a un ejecutable nativo o a una entrada JavaScript. Los archivos `.cmd`, `.bat` y `.ps1` son envoltorios y no sirven como ruta al ejecutable.
+- **La terminal de Ollama no arranca.** Confirma que Ollama está instalado y comprueba con `ollama list` que tienes al menos un modelo.
+- **La terminal de Claude no arranca.** Instala la CLI de Claude e inicia sesión en ella. El chat gráfico usa por separado la extensión oficial de Anthropic.
+- **Los controles nuevos no aparecen tras actualizar.** Ejecuta **Desarrollador: Volver a cargar ventana** desde la paleta de comandos.
 
-## Development
+## Privacidad y permisos
 
-Use Node.js 22 or later and npm:
+Los historiales de Codex y Ollama, los nombres de las sesiones y sus rutas se guardan localmente en el almacenamiento de la extensión de VS Code. La extensión funciona sin telemetría. Las herramientas de cada proveedor gestionan su propia autenticación.
+
+Los mensajes y los adjuntos seleccionados se envían al proveedor del chat. Codex puede ejecutar comandos o modificar archivos según el modo de permisos elegido. Consulta la [política de privacidad](PRIVACY.md).
+
+## Desarrollo
+
+Usa Node.js 22 o posterior y npm.
 
 ```sh
 npm ci --ignore-scripts
@@ -77,19 +81,19 @@ npm run verify:distribution
 npm run package
 ```
 
-Packaging regenerates third-party notices and verifies the VSIX contents. It rejects recognized credential patterns, private profiles, provider binaries, unreviewed runtime dependencies, and missing or modified license notices. Tests do not require real provider credentials.
+El empaquetado regenera los avisos de terceros y verifica el VSIX. Las pruebas funcionan con datos de ejemplo y sin credenciales reales.
 
-Optional browser checks require Microsoft Edge:
+Las comprobaciones de interfaz opcionales requieren Microsoft Edge.
 
 ```sh
 node integration/sidebar.cjs
 node integration/ui.cjs
 ```
 
-Read [PUBLISHING.md](https://github.com/mauricioed/multiple-ia-agents/blob/HEAD/PUBLISHING.md) before publishing. Marketplace releases use the `Mauricio` publisher. Never commit access tokens or provider account files.
+Antes de publicar, consulta la [guía de publicación](PUBLISHING.md). El identificador del editor en el Marketplace es `Mauricio`.
 
-## License
+## Licencia
 
-Project code is available under the [MIT License](https://github.com/mauricioed/multiple-ia-agents/blob/HEAD/LICENSE), with its original copyright notice preserved. Bundled JavaScript dependency licenses are preserved in [licenses/](https://github.com/mauricioed/multiple-ia-agents/blob/HEAD/licenses/), listed in [THIRD_PARTY_NOTICES.md](https://github.com/mauricioed/multiple-ia-agents/blob/HEAD/THIRD_PARTY_NOTICES.md), and recorded with hashes in [DEPENDENCY-LICENSES.json](https://github.com/mauricioed/multiple-ia-agents/blob/HEAD/DEPENDENCY-LICENSES.json).
+El proyecto se distribuye bajo la [licencia MIT](LICENSE). Las licencias originales de las dependencias incluidas se conservan en [licenses/](licenses/), se enumeran en el [aviso de terceros](THIRD_PARTY_NOTICES.md) y se registran con sus sumas de verificación en [DEPENDENCY-LICENSES.json](DEPENDENCY-LICENSES.json).
 
-Provider services, external applications, trademarks, and model weights remain subject to their respective terms. See [LICENSE_REVIEW.md](https://github.com/mauricioed/multiple-ia-agents/blob/HEAD/LICENSE_REVIEW.md) and [REVIEW_REPORT.md](https://github.com/mauricioed/multiple-ia-agents/blob/HEAD/REVIEW_REPORT.md) for the scope and limitations of the technical review.
+Los servicios de los proveedores, las aplicaciones externas, las marcas y los modelos se rigen por sus propios términos. Consulta la [revisión de licencias](LICENSE_REVIEW.md) y el [informe de revisión](REVIEW_REPORT.md) para conocer el alcance de la revisión técnica.

@@ -1,3 +1,12 @@
+## 0.1.19
+
+- Unifica en español la descripción y las insignias del Marketplace.
+- Usa la URL directa del GIF de demostración en GitHub.
+
+## 0.1.18
+
+- Add compatibility, version, and license badges and an animated walkthrough to the Marketplace overview.
+
 ## 0.1.17
 
 - Apply permission changes during a pending approval by continuing in the same conversation under the new mode.

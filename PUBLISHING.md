@@ -17,6 +17,7 @@ The repository and the VS Code Marketplace are separate distribution channels. M
 2. Set `publisher` in `package.json` to that exact publisher ID. `local-development` is a placeholder. Changing it changes the extension identifier and storage location; existing development history is not automatically migrated.
 3. Select a new release version, update the lockfile and changelog, and rerun all checks and packaging.
 4. Inspect the generated VSIX before publishing. It must contain LICENSE, THIRD_PARTY_NOTICES.md, DEPENDENCY-LICENSES.json, and the original license texts under licenses/.
+   Verify that the README demo GIF is available at its public GitHub URL on the branch used for packaging.
 5. Upload the reviewed VSIX through the publisher management page, or use the official CLI with narrowly scoped credentials supplied outside this repository. Never commit a Marketplace token or put one in an npm script, README, or issue.
 
 Claude Code is a separately installed extension dependency; each user must authenticate under their own applicable provider agreement. Codex and Ollama executables and model weights are not included. Review provider terms if this integration or distribution model changes.

@@ -1,7 +1,7 @@
 'use strict';
 const {execFileSync}=require('node:child_process');
 const fs=require('node:fs');const path=require('node:path');const vm=require('node:vm');
-const {isReleaseIcon}=require('./release-icon.cjs');
+const {isReleaseAsset}=require('./release-assets.cjs');
 const root=path.resolve(__dirname,'..');
 const git=(...args)=>execFileSync('git',args,{cwd:root,maxBuffer:32*1024*1024});
 // Reuse the current distribution scanner's credential signatures, so the
@@ -20,7 +20,7 @@ for(const commit of commits){
     if(mode==='120000'||/(?:^|\/)(?:\.env(?:\..*)?|\.aws|\.codex|\.claude|auth\.json|credentials(?:\.json)?|sessions\.json|node_modules|artifacts|\.test-[^/]*)($|\/)|\.(?:pem|key|pfx|p12|vsix|exe|dll|gguf|safetensors|sqlite)$/i.test(name))failures.push(commit.slice(0,8)+' '+name+': private or distribution-only path');
     const identity=oid+' '+name;if(checked.has(identity))continue;checked.add(identity);
     const bytes=git('cat-file','blob',oid);const text=bytes.toString('utf8');
-    if(isReleaseIcon(name,bytes))continue;
+    if(isReleaseAsset(name,bytes))continue;
     if(bytes.includes(0)||patterns.some(pattern=>pattern.test(text)))failures.push(commit.slice(0,8)+' '+name+': binary or recognized credential');
     if(/C:[\\/]+Users[\\/]+[A-Za-z0-9_.-]+/i.test(text))failures.push(commit.slice(0,8)+' '+name+': private machine path');
     if(!name.startsWith('licenses/')&&/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text))failures.push(commit.slice(0,8)+' '+name+': contact data outside attribution');

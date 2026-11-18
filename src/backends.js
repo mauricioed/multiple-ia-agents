@@ -2,6 +2,7 @@
 const { t, language } = require('./i18n');
 const { RpcProcess } = require('./rpc-process');
 const cli = require('./agent-cli');
+const { tools, runFileTool } = require('./ollama-file-tools');
 const { codexPermissions } = require('./permissions');
 
 class CodexBackend {
@@ -116,25 +117,78 @@ class CodexBackend {
 }
 
 class OllamaBackend {
-  constructor(session, config, emit) { Object.assign(this, { session, config, emit }); }
+  constructor(session, config, emit, approve) { Object.assign(this, { session, config, emit, approve }); }
   async models() { return (await cli.listOllamaModels(this.config)).map(name => ({ label: name, value: name })); }
   async run(text, history) {
     if (!this.session.model) throw new Error(t('Selecciona un modelo instalado de Ollama.'));
     this.controller = new AbortController();
     const messages = history.filter(m => ['user', 'assistant'].includes(m.role) && !m.failed).map(m => ({ role: m.role, content: m.contextText || m.text }));
+    const { signal } = this.controller;
     const base = await cli.ollamaEndpoint(this.config);
-    const result = await fetch(base + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: this.session.model, messages, stream: true }), signal: this.controller.signal });
-    if (!result.ok) throw new Error(t('Ollama: {0}. Comprueba el servidor local y el modelo instalado.', result.status));
+    let remainingCalls = 8;
+    let withTools = true;
+    let round = 0;
+    while (true) {
+      const result = await fetch(base + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: this.session.model, messages, stream: true, ...(withTools ? { tools } : {}) }), signal });
+      if (!result.ok) {
+        const detail = await result.json().catch(() => null);
+        if (withTools && /does not support tools|tool calling is not supported/iu.test(detail?.error || '')) {
+          this.emit({ type: 'activity', id: 'ollama-tools-unavailable', text: t('Este modelo de Ollama no admite herramientas. Selecciona un modelo compatible para leer archivos.') });
+          withTools = false;
+          continue;
+        }
+        throw new Error(t('Ollama: {0}. Comprueba el servidor local y el modelo instalado.', result.status));
+      }
+      const reply = await this.readResponse(result, round++);
+      if (!reply.tool_calls.length || !withTools) return;
+      if (reply.tool_calls.length > remainingCalls) throw new Error(t('Ollama superó el límite de lecturas en este turno. Pide menos archivos o fragmentos.'));
+      messages.push(reply);
+      for (const [index, call] of reply.tool_calls.entries()) {
+        const name = call.function.name;
+        const label = name === 'read_chat_file' ? t('Leer archivo') : t('Listar carpeta');
+        const authorize = this.approve && ((target, requestSignal) => this.approve({
+          title: t('{0} fuera de la carpeta del chat', label), detail: target
+        }, requestSignal));
+        const output = await runFileTool(this.session.root, call, signal, authorize);
+        signal.throwIfAborted();
+        if (tools.some(definition => definition.function.name === name)) {
+          const target = call.function.arguments?.path;
+          this.emit({ type: 'activity', id: 'ollama-tool-' + round + '-' + index, text: label + ' · ' + (typeof target === 'string' ? target.slice(0, 4096) : ''), status: output.error ? 'failed' : 'completed' });
+        }
+        messages.push({ role: 'tool', tool_name: name, content: JSON.stringify(output) });
+      }
+      remainingCalls -= reply.tool_calls.length;
+      withTools = remainingCalls > 0;
+    }
+  }
+  async readResponse(result, round) {
+    const reply = { role: 'assistant', content: '', tool_calls: [] };
     const decoder = new TextDecoder(); let buffer = ''; let done = false;
-    const consume = line => { if (!line.trim()) return; const event = JSON.parse(line); if (event.error) throw new Error(event.error); if (event.message?.content) this.emit({ type: 'delta', id: 'ollama', text: event.message.content }); if (event.done) done = true; };
+    const consume = line => {
+      if (!line.trim()) return;
+      const event = JSON.parse(line);
+      if (event.error) throw new Error(event.error);
+      const message = event.message;
+      if (message?.content) {
+        reply.content += message.content;
+        this.emit({ type: 'delta', id: 'ollama-' + round, text: message.content });
+      }
+      if (message?.thinking) reply.thinking = (reply.thinking || '') + message.thinking;
+      for (const call of message?.tool_calls || []) {
+        if (typeof call?.function?.name === 'string') reply.tool_calls.push(call);
+        if (reply.tool_calls.length > 8) throw new Error(t('Ollama superó el límite de lecturas en este turno. Pide menos archivos o fragmentos.'));
+      }
+      if (event.done) done = true;
+    };
     for await (const chunk of result.body) {
       buffer += decoder.decode(chunk, { stream: true });
       let newline; while ((newline = buffer.indexOf('\n')) !== -1) { consume(buffer.slice(0, newline)); buffer = buffer.slice(newline + 1); }
-      if (buffer.length > 4 * 1024 * 1024) throw new Error(t('Respuesta de Ollama demasiado grande.'));
+      if (buffer.length + reply.content.length + (reply.thinking?.length || 0) > 4 * 1024 * 1024) throw new Error(t('Respuesta de Ollama demasiado grande.'));
     }
     buffer += decoder.decode(); if (buffer.trim()) consume(buffer);
     if (!done) throw new Error(t('Ollama ha cerrado la conexión antes de terminar.'));
+    return reply;
   }
   async stop() { this.controller?.abort(); }
   dispose() { this.stop(); }

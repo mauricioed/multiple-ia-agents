@@ -75,6 +75,32 @@ test('rendered markdown escapes HTML and does not allow executable links', async
   assert.doesNotMatch(state.messages[0].html, /<script|<img|href="javascript/u);
 });
 
+test('chat folder links open inside the session root and reject external folders and schemes', async t => {
+  const { pathToFileURL } = require('node:url');
+  const f = await fixture(t);
+  const folder = path.join(f.root, 'test folder');
+  await fs.mkdir(folder);
+  const opened = [];
+  const previousUri = fake.Uri;
+  const previousEnv = fake.env;
+  t.after(() => { fake.Uri = previousUri; fake.env = previousEnv; });
+  fake.Uri = { file: value => value };
+  fake.env = { openExternal: async value => { opened.push(value); return true; } };
+  await f.manager.openChatLink(f.session, './test%20folder/');
+  const fileUrl = pathToFileURL(folder).href;
+  let view;
+  const panel = { webview: { postMessage: message => { view = message; } } };
+  f.manager.panels.set(f.session.id, panel);
+  f.manager.histories.set(f.session.id, [{ role: 'assistant', text: `[Folder](${fileUrl})` }]);
+  f.manager.pushChat(f.session);
+  assert.ok(view.messages[0].html.includes(`href="${fileUrl}"`));
+  await f.manager.handleChat(f.session, panel, { action: 'link', url: fileUrl, requestId: 1 });
+  assert.equal(view.error, undefined);
+  await assert.rejects(f.manager.openChatLink(f.session, '../'));
+  await assert.rejects(f.manager.openChatLink(f.session, 'command:workbench.action.closeWindow'));
+  assert.deepEqual(opened, [await fs.realpath(folder), await fs.realpath(folder)]);
+});
+
 test('new chat asks only for its folder, persists and opens immediately without Quick Pick', async t => {
   const f = await fixture(t);
   const calls = [];
@@ -237,6 +263,52 @@ test('restored chat reattaches scripts and state by session ID and supports old 
   await f.manager.restoreChatPanel(legacy, undefined);
   assert.equal(f.manager.panels.get(second.id), legacy);
   assert.ok(legacy.sent.some(message => message.type === 'chat' && message.session.id === second.id));
+});
+
+test('changing to automatic review during approval resumes the same conversation under the new mode', async t => {
+  const f = await fixture(t);
+  const { manager, session } = f;
+  let approvalReady;
+  const ready = new Promise(resolve => { approvalReady = resolve; });
+  let finishInterrupt;
+  const interrupted = new Promise(resolve => { finishInterrupt = resolve; });
+  let receivedDecision;
+  const original = {
+    async run() {
+      const pending = manager.approve(session, { title: 'Pending action', detail: 'test' });
+      approvalReady();
+      receivedDecision = await pending;
+    },
+    stop: () => interrupted,
+    dispose() {}
+  };
+  const next = {
+    async run(input) {
+      assert.equal(session.permission, 'auto');
+      assert.equal(session.backendId, 'saved-thread');
+      assert.match(input, /Continúa la tarea anterior/);
+      manager.onAgentEvent(session, { type: 'answer', id: 'next', text: 'Continued' });
+    }
+  };
+  manager.backends.set(session.id, original);
+  manager.getBackend = () => manager.backends.get(session.id) || next;
+  let reply;
+  const panel = { webview: { postMessage: value => { if (value.type === 'reply') reply = value; } } };
+  manager.panels.set(session.id, panel);
+  const sending = manager.send(session, 'Original task');
+  await ready;
+  await manager.handleChat(session, panel, { action: 'permission', value: 'auto', requestId: 1 });
+  assert.equal(reply.error, undefined);
+  assert.equal(receivedDecision, false);
+  assert.equal(manager.approvals.size, 0);
+  assert.equal(manager.backends.get(session.id), original);
+  assert.equal(f.context.globalState.get('chatPermission.codex'), 'auto');
+  finishInterrupt();
+  await sending;
+  assert.deepEqual((await manager.history(session)).map(entry => entry.text), [
+    'Original task', 'Continuando con el nuevo modo de permisos.', 'Continued'
+  ]);
+  assert.equal(manager.running.size, 0);
 });
 
 test('permission mode changes restart the idle adapter, persist automatic review and preserve the provider thread', async t => {

@@ -1,4 +1,4 @@
-# Multiple IA Agents
+# Multiple AI Agent Chats
 
 A VS Code extension for managing Codex, Claude Code, and Ollama chats and native terminal sessions from one **IA Agents** sidebar. Each session is associated with a selected folder, and the explorer follows the active session. Use custom Codex and Ollama chat panels, the official Claude graphical chat, or an agent running in a terminal.
 
@@ -34,11 +34,13 @@ Build a VSIX from source using the commands below, then run **Extensions: Instal
 
 ## Usage
 
-1. Open **IA Agents** in the Activity Bar, or run **Multiple IA Agents: Show IA Agents (no usage meters)** from the Command Palette.
+1. Open **IA Agents** in the Activity Bar, or run **Multiple AI Agent Chats: Show IA Agents (no usage meters)** from the Command Palette.
 2. Click the **chat icon with its right-hand arrow** to open **New chat with agent**, then choose Codex, Claude, or Ollama. Use the **terminal icon with its right-hand arrow** for terminal sessions.
 3. Select the chat's folder. For Codex and Ollama, write in our custom panel; for Claude, use the official graphical panel.
 4. Select a chat or terminal in the sidebar to reveal it and browse its associated folder. Expand folders and open files; double-click Markdown files to open their preview.
 5. For Ollama, choose an installed model, or explicitly use **Download model** after installing the runtime. Review that model's license before using or distributing it.
+
+With an Ollama model that supports tool calling, ask the chat to find and read project documentation, such as Spec Kit specifications, or provide a specific file path. The tools can list folders and read UTF-8 text inside the chat folder. To request access elsewhere on your computer, specify a full local path. The chat shows the operation and the resolved path for one-time approval before sending any contents to the local Ollama server. Manual file attachments also work with models that lack tool support.
 
 Claude entries are launchers for the official panel, not a guaranteed one-to-one mapping to Anthropic conversation IDs. Closing a tracked official tab removes its linked entries from the active list; entries sharing that tab close together. The official extension controls any usage information it displays itself.
 
@@ -59,7 +61,7 @@ Agent terminals require the corresponding CLI to be installed separately. For Cl
 
 The extension adds no telemetry and does not read Claude authentication files. Provider tools manage their own authentication and may inherit the process environment. Custom chat histories, session names, and folder paths are stored locally in VS Code extension storage.
 
-Messages and selected attachments are sent to the chosen backend. Codex can execute commands or modify files according to the selected permissions. Ollama models are downloaded only after an explicit action. Do not send confidential material unless you are authorized to share it with that provider. See [PRIVACY.md](PRIVACY.md).
+Messages and selected attachments are sent to the chosen backend. Codex can execute commands or modify files according to the selected permissions. Ollama models are downloaded only after an explicit action. Do not send confidential material unless you are authorized to share it with that provider. See [PRIVACY.md](https://github.com/mauricioed/multiple-ia-agents/blob/HEAD/PRIVACY.md).
 
 ## Development
 
@@ -84,10 +86,10 @@ node integration/sidebar.cjs
 node integration/ui.cjs
 ```
 
-Read [PUBLISHING.md](PUBLISHING.md) before publishing. Marketplace releases use the `Mauricio` publisher. Never commit access tokens or provider account files.
+Read [PUBLISHING.md](https://github.com/mauricioed/multiple-ia-agents/blob/HEAD/PUBLISHING.md) before publishing. Marketplace releases use the `Mauricio` publisher. Never commit access tokens or provider account files.
 
 ## License
 
-Project code is available under the [MIT License](LICENSE), with its original copyright notice preserved. Bundled JavaScript dependency licenses are preserved in [licenses/](licenses/), listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), and recorded with hashes in [DEPENDENCY-LICENSES.json](DEPENDENCY-LICENSES.json).
+Project code is available under the [MIT License](https://github.com/mauricioed/multiple-ia-agents/blob/HEAD/LICENSE), with its original copyright notice preserved. Bundled JavaScript dependency licenses are preserved in [licenses/](https://github.com/mauricioed/multiple-ia-agents/blob/HEAD/licenses/), listed in [THIRD_PARTY_NOTICES.md](https://github.com/mauricioed/multiple-ia-agents/blob/HEAD/THIRD_PARTY_NOTICES.md), and recorded with hashes in [DEPENDENCY-LICENSES.json](https://github.com/mauricioed/multiple-ia-agents/blob/HEAD/DEPENDENCY-LICENSES.json).
 
-Provider services, external applications, trademarks, and model weights remain subject to their respective terms. See [LICENSE_REVIEW.md](LICENSE_REVIEW.md) and [REVIEW_REPORT.md](REVIEW_REPORT.md) for the scope and limitations of the technical review.
+Provider services, external applications, trademarks, and model weights remain subject to their respective terms. See [LICENSE_REVIEW.md](https://github.com/mauricioed/multiple-ia-agents/blob/HEAD/LICENSE_REVIEW.md) and [REVIEW_REPORT.md](https://github.com/mauricioed/multiple-ia-agents/blob/HEAD/REVIEW_REPORT.md) for the scope and limitations of the technical review.

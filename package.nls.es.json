@@ -1,6 +1,6 @@
 {
     "ui.1": "Nuevo chat",
-    "ui.2": "Mostrar IA Agents (sin medidores)",
+    "ui.2": "Mostrar AI Agents (sin medidores)",
     "ui.3": "Actualizar archivos del chat",
     "ui.4": "Abrir archivo del chat",
     "ui.5": "Abrir Markdown en editor flotante",
@@ -8,8 +8,8 @@
     "ui.7": "Abrir Markdown seleccionado en ventana flotante",
     "ui.8": "Abrir chat",
     "ui.9": "Cerrar chat",
-    "ui.10": "IA Agents",
-    "ui.11": "IA Agents",
+    "ui.10": "AI Agents",
+    "ui.11": "AI Agents",
     "ui.13": "Archivos del chat",
     "ui.14": "Ruta opcional al Codex instalado por el usuario.",
     "ui.16": "Ruta opcional al Ollama instalado por el usuario.",

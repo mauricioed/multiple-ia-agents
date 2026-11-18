@@ -1,4 +1,5 @@
 'use strict';const fs=require('node:fs');const path=require('node:path');
+  const {isReleaseIcon}=require('./release-icon.cjs');
   const root=path.resolve(__dirname,'..');const ignored=new Set(['.git','node_modules','artifacts','dist']);
   const forbiddenNames=/^(?:\.env(?:\..*)?|\.aws|\.codex|\.claude|\.npmrc\.private|credentials(?:\.json)?|auth\.json|sessions\.json)$/i;
   const binaries=/\.(?:exe|dll|node|so|dylib|vsix|gguf|safetensors|pem|key|pfx|p12|db|sqlite)$/i;
@@ -10,7 +11,7 @@
     if(forbiddenNames.test(entry.name)||binaries.test(entry.name)){failures.push(relative+': unexpected private or binary path');continue;}
     if(entry.isSymbolicLink()){failures.push(relative+': unexpected symlink');continue;}
     if(entry.isDirectory()){walk(target);continue;}
-    const bytes=fs.readFileSync(target);if(bytes.includes(0)){failures.push(relative+': unexpected binary content');continue;}
+    const bytes=fs.readFileSync(target);if(isReleaseIcon(relative,bytes)){files++;continue;}if(bytes.includes(0)){failures.push(relative+': unexpected binary content');continue;}
     const text=bytes.toString('utf8');if(patterns.some(pattern=>pattern.test(text)))failures.push(relative+': possible credential pattern');
     if (/C:[\\/]+Users[\\/]+[A-Za-z0-9_.-]+/i.test(text)) failures.push(relative+": private machine path");
     if (!relative.startsWith("licenses/") && /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text)) failures.push(relative+": personal contact data in source");

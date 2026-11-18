@@ -1,9 +1,10 @@
 {
     "name": "multiple-ia-agents",
-    "displayName": "Multiple IA Agents",
+    "displayName": "Multiple AI Agent Chats",
     "description": "%extension.description%",
-    "version": "0.1.10",
+    "version": "0.1.17",
     "publisher": "Mauricio",
+    "icon": "media/icon.png",
     "engines": {
         "vscode": "^1.145.0"
     },
@@ -42,85 +43,85 @@
             {
                 "command": "multipleIAAgents.new",
                 "title": "%ui.1%",
-                "category": "Multiple IA Agents",
+                "category": "Multiple AI Agent Chats",
                 "icon": "$(comment-discussion)"
             },
             {
                 "command": "multipleIAAgents.show",
                 "title": "%ui.2%",
-                "category": "Multiple IA Agents"
+                "category": "Multiple AI Agent Chats"
             },
             {
                 "command": "multipleIAAgents.refreshFiles",
                 "title": "%ui.3%",
-                "category": "Multiple IA Agents",
+                "category": "Multiple AI Agent Chats",
                 "icon": "$(refresh)"
             },
             {
                 "command": "multipleIAAgents.openChatFile",
                 "title": "%ui.4%",
-                "category": "Multiple IA Agents"
+                "category": "Multiple AI Agent Chats"
             },
             {
                 "command": "multipleIAAgents.previewMarkdown",
                 "title": "%ui.5%",
-                "category": "Multiple IA Agents"
+                "category": "Multiple AI Agent Chats"
             },
             {
                 "command": "multipleIAAgents.reopen",
                 "title": "%ui.6%",
-                "category": "Multiple IA Agents"
+                "category": "Multiple AI Agent Chats"
             },
             {
                 "command": "multipleIAAgents.openSelectedMarkdown",
                 "title": "%ui.7%",
-                "category": "Multiple IA Agents"
+                "category": "Multiple AI Agent Chats"
             },
             {
                 "command": "multipleIAAgents.new.codex",
                 "title": "Codex",
-                "category": "Multiple IA Agents"
+                "category": "Multiple AI Agent Chats"
             },
             {
                 "command": "multipleIAAgents.new.claude",
                 "title": "Claude",
-                "category": "Multiple IA Agents"
+                "category": "Multiple AI Agent Chats"
             },
             {
                 "command": "multipleIAAgents.new.ollama",
                 "title": "Ollama",
-                "category": "Multiple IA Agents"
+                "category": "Multiple AI Agent Chats"
             },
             {
                 "command": "multipleIAAgents.selectChat",
                 "title": "%ui.8%",
-                "category": "Multiple IA Agents"
+                "category": "Multiple AI Agent Chats"
             },
             {
                 "command": "multipleIAAgents.closeChat",
                 "title": "%ui.9%",
-                "category": "Multiple IA Agents",
+                "category": "Multiple AI Agent Chats",
                 "icon": "$(close)"
             },
             {
                 "command": "multipleIAAgents.newTerminal.codex",
                 "title": "Codex",
-                "category": "Multiple IA Agents"
+                "category": "Multiple AI Agent Chats"
             },
             {
                 "command": "multipleIAAgents.newTerminal.claude",
                 "title": "Claude",
-                "category": "Multiple IA Agents"
+                "category": "Multiple AI Agent Chats"
             },
             {
                 "command": "multipleIAAgents.newTerminal.ollama",
                 "title": "Ollama",
-                "category": "Multiple IA Agents"
+                "category": "Multiple AI Agent Chats"
             },
             {
                 "command": "multipleIAAgents.newTerminal.terminal",
                 "title": "%ui.19%",
-                "category": "Multiple IA Agents",
+                "category": "Multiple AI Agent Chats",
                 "icon": "$(terminal)"
             }
         ],
@@ -245,7 +246,7 @@
             ]
         },
         "configuration": {
-            "title": "Multiple IA Agents",
+            "title": "Multiple AI Agent Chats",
             "properties": {
                 "multipleIAAgents.executables.codex": {
                     "type": "string",

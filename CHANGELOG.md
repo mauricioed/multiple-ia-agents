@@ -1,3 +1,32 @@
+## 0.1.17
+
+- Apply permission changes during a pending approval by continuing in the same conversation under the new mode.
+
+## 0.1.16
+
+- Let compatible Ollama models list folders and read text files inside the chat folder, and request one-time approval for other local paths.
+
+## 0.1.15
+
+- Open folder links from chat responses.
+- Remember the last permission mode for new chats and allow changes while an approval is pending.
+
+## 0.1.14
+
+- Repackage version 0.1.13 with an updated release version.
+
+## 0.1.13
+
+- Rename the sidebar and its opening command from IA Agents to AI Agents in English and Spanish.
+
+## 0.1.12
+
+- Rename the extension to Multiple AI Agent Chats.
+
+## 0.1.11
+
+- Add a Marketplace icon matching the IA Agents activity bar symbol.
+
 ## 0.1.10
 
 - Align proportional dropdown arrows to the right of the chat and terminal icons, preserving their vertical size.

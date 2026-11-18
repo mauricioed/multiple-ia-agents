@@ -1,6 +1,6 @@
 {
     "ui.1": "New chat",
-    "ui.2": "Show IA Agents (no usage meters)",
+    "ui.2": "Show AI Agents (no usage meters)",
     "ui.3": "Refresh chat files",
     "ui.4": "Open chat file",
     "ui.5": "Open Markdown in floating editor",
@@ -8,8 +8,8 @@
     "ui.7": "Open selected Markdown in floating window",
     "ui.8": "Open chat",
     "ui.9": "Close chat",
-    "ui.10": "IA Agents",
-    "ui.11": "IA Agents",
+    "ui.10": "AI Agents",
+    "ui.11": "AI Agents",
     "ui.13": "Chat files",
     "ui.14": "Optional path to your separately installed Codex executable.",
     "ui.16": "Optional path to your separately installed Ollama executable.",

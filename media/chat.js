@@ -242,7 +242,9 @@ function render() {
     full: t('Permite acceder fuera de la carpeta y a Internet sin pedir aprobaci\u00f3n, sujeto a las pol\u00edticas del proveedor.'),
     custom: t('Utiliza los permisos de la configuraci\u00f3n nativa del agente.')
   }[session.permission || 'ask'] || t('Permisos para las acciones del agente'));
-  permission.value = session.permission || 'ask'; permission.disabled = state.running || session.provider === 'ollama';
+  permission.value = session.permission || 'ask';
+  permission.disabled = session.provider === 'ollama' || (state.running && !state.approvals.some(prompt => !prompt.question));
+  if (state.running && !permission.disabled) permission.title = t('Cambiar el modo interrumpe la solicitud pendiente y continúa con los permisos nuevos.');
   model.disabled = state.running;
   if (![...model.options].some(o => o.value === (session.model || ''))) model.append(option(session.model || t('Predeterminado'), session.model || ''));
   model.value = session.model || '';
@@ -281,12 +283,15 @@ function render() {
   welcome.hidden = state.messages.length > 0;
   if (state.notice) notice.textContent = state.notice;
   else if (state.running) notice.replaceChildren(chatIcon('chatGradient'), el('span', t('{0} está escribiendo…', agentName(session.provider))));
-  else notice.textContent = session.provider === 'ollama' ? (session.model ? t('Ollama conversa con el contexto adjunto; no modifica archivos ni ejecuta comandos.') : t('Inicia Ollama y pulsa Descargar modelo para instalar tu primer modelo local.')) : '';
+  else notice.textContent = session.provider === 'ollama' ? (session.model ? t('Los modelos con herramientas pueden leer archivos de texto de la carpeta del chat.') : t('Inicia Ollama y pulsa Descargar modelo para instalar tu primer modelo local.')) : '';
   const prompts = JSON.stringify(state.approvals);
   if (prompts !== lastApprovals) {
     approvals.replaceChildren(); lastApprovals = prompts;
     for (const prompt of state.approvals) {
       const card = el('div', undefined, 'approval-card'); card.append(el('strong', prompt.title), el('pre', prompt.detail));
+      if (session.permission === 'auto' && !prompt.question) {
+        card.append(el('p', t('El agente requiere confirmación manual para esta acción aunque la revisión automática esté seleccionada.')));
+      }
       if (prompt.question) {
         const answer = el('input'); answer.placeholder = t('Escribe tu respuesta'); answer.setAttribute('aria-label', prompt.title); card.append(answer);
         for (const choice of prompt.options || []) card.append(button(choice.label, choice.description || choice.label, () => rpc('approval', { id: prompt.id, answer: choice.label })));

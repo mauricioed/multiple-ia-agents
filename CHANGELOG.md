@@ -1,3 +1,10 @@
+## 0.1.20
+
+- Permite ampliar hacia arriba el campo de escritura del chat.
+- Admite adjuntos de texto e imagen (PNG, JPEG y WebP) y enlaces locales con línea y columna.
+- Añade las etiquetas Claude, Codex y Ollama a la ficha de la extensión.
+- Actualiza el icono con un reflejo sobre el fondo.
+
 ## 0.1.19
 
 - Unifica en español la descripción y las insignias del Marketplace.

@@ -27,15 +27,42 @@ test('restores provider thread and permissions and saves history across manager 
   assert.deepEqual(history.map(m => [m.role, m.text]), [['user', 'Pregunta'], ['assistant', 'Hola mundo']]);
   assert.equal(restored.session('first').backendId, 'saved-thread');
 });
-test('attachments stay inside folder, text only, failed validation preserves transcript', async t => {
+test('attachments stay inside the folder and failed validation preserves the transcript', async t => {
   const f = await fixture(t); await fs.writeFile(path.join(f.root, 'doc.md'), '# Contexto');
   f.manager.getBackend = () => ({ run: async prompt => assert.match(prompt, /# Contexto/) });
   await f.manager.send(f.session, 'Lee esto', [['doc.md']]);
   await assert.rejects(f.manager.send(f.session, 'Escape', [['..', 'secret']]), /Ruta/);
   await fs.writeFile(path.join(f.root, 'binary'), Buffer.from([0, 1, 2]));
-  await assert.rejects(f.manager.send(f.session, 'Binario', [['binary']]), /binarios/);
+  await assert.rejects(f.manager.send(f.session, 'Binario', [['binary']]), /binary.*UTF-8/);
   assert.equal((await f.manager.history(f.session)).filter(m => m.role === 'user').length, 1);
   assert.equal(f.manager.running.size, 0);
+});
+test('attachment picker accepts a mix of UTF-16 text and images and rejects unsupported files', async t => {
+  const f = await fixture(t);
+  const { Uri } = fake;
+  const { showOpenDialog } = fake.window;
+  t.after(() => { fake.Uri = Uri; fake.window.showOpenDialog = showOpenDialog; });
+  fake.Uri = { file: value => value };
+  await fs.writeFile(path.join(f.root, 'notes.txt'), Buffer.from('\uFEFFHola', 'utf16le'));
+  const image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==';
+  await fs.writeFile(path.join(f.root, 'photo.png'), Buffer.from(image, 'base64'));
+  await fs.writeFile(path.join(f.root, 'unsupported.bin'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  let selected = ['notes.txt', 'photo.png'];
+  fake.window.showOpenDialog = async () => selected.map(name => ({ scheme: 'file', fsPath: path.join(f.root, name) }));
+  const replies = [];
+  const panel = { webview: { postMessage: value => { if (value.type === 'reply') replies.push(value); } } };
+  f.manager.panels.set(f.session.id, panel);
+  await f.manager.handleChat(f.session, panel, { action: 'attach', requestId: 1 });
+  assert.deepEqual(replies[0].result, [['notes.txt'], ['photo.png']]);
+  f.manager.getBackend = () => ({ run: async (prompt, _history, images) => {
+    assert.match(prompt, /Hola/u);
+    assert.deepEqual(images, [{ mime: 'image/png', data: image }]);
+  } });
+  await f.manager.send(f.session, 'Describe the image and notes', replies[0].result);
+  assert.equal((await f.manager.history(f.session)).at(-1).role, 'user');
+  selected = ['unsupported.bin'];
+  await f.manager.handleChat(f.session, panel, { action: 'attach', requestId: 2, attachments: replies[0].result });
+  assert.match(replies[1].error, /unsupported\.bin.*UTF-8/u);
 });
 test('concurrent chats remain independent; duplicate send is rejected', async t => {
   const f = await fixture(t); const second = f.manager.session('second'); second.provider = 'codex';
@@ -75,16 +102,20 @@ test('rendered markdown escapes HTML and does not allow executable links', async
   assert.doesNotMatch(state.messages[0].html, /<script|<img|href="javascript/u);
 });
 
-test('chat folder links open inside the session root and reject external folders and schemes', async t => {
+test('chat opens local folders and files inside the session root and allows HTTP links', async t => {
   const { pathToFileURL } = require('node:url');
   const f = await fixture(t);
   const folder = path.join(f.root, 'test folder');
   await fs.mkdir(folder);
+  const file = path.join(folder, 'notes.md');
+  await fs.writeFile(file, '# Notes\n\nExample');
   const opened = [];
-  const previousUri = fake.Uri;
-  const previousEnv = fake.env;
-  t.after(() => { fake.Uri = previousUri; fake.env = previousEnv; });
-  fake.Uri = { file: value => value };
+  const editor = [];
+  const { Uri, env, commands, Range } = fake;
+  t.after(() => { Object.assign(fake, { Uri, env, commands, Range }); });
+  fake.Uri = { file: value => value, parse: value => value };
+  fake.Range = class { constructor(...coordinates) { this.coordinates = coordinates; } };
+  fake.commands = { executeCommand: async (...args) => { editor.push(args); } };
   fake.env = { openExternal: async value => { opened.push(value); return true; } };
   await f.manager.openChatLink(f.session, './test%20folder/');
   const fileUrl = pathToFileURL(folder).href;
@@ -96,9 +127,25 @@ test('chat folder links open inside the session root and reject external folders
   assert.ok(view.messages[0].html.includes(`href="${fileUrl}"`));
   await f.manager.handleChat(f.session, panel, { action: 'link', url: fileUrl, requestId: 1 });
   assert.equal(view.error, undefined);
+  await f.manager.openChatLink(f.session, './test%20folder/notes.md');
+  const absoluteLink = file.split(path.sep).join('/');
+  f.manager.histories.set(f.session.id, [{ role: 'assistant', text: `[Notes](<${absoluteLink}:3:2>)` }]);
+  f.manager.pushChat(f.session);
+  const renderedLink = /href="([^"]+)"/u.exec(view.messages[0].html);
+  assert.ok(renderedLink);
+  await f.manager.handleChat(f.session, panel, { action: 'link', url: renderedLink[1], requestId: 2 });
+  assert.equal(view.error, undefined);
+  await f.manager.openChatLink(f.session, pathToFileURL(file).href + '#L3');
+  await f.manager.openChatLink(f.session, 'https://example.com');
   await assert.rejects(f.manager.openChatLink(f.session, '../'));
   await assert.rejects(f.manager.openChatLink(f.session, 'command:workbench.action.closeWindow'));
-  assert.deepEqual(opened, [await fs.realpath(folder), await fs.realpath(folder)]);
+  assert.deepEqual(opened, [await fs.realpath(folder), await fs.realpath(folder), 'https://example.com']);
+  const target = await fs.realpath(file);
+  assert.deepEqual(editor, [
+    ['vscode.open', target],
+    ['vscode.open', target, { selection: new fake.Range(2, 1, 2, 1) }],
+    ['vscode.open', target, { selection: new fake.Range(2, 0, 2, 0) }]
+  ]);
 });
 
 test('new chat asks only for its folder, persists and opens immediately without Quick Pick', async t => {

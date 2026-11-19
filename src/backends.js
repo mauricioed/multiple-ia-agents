@@ -33,7 +33,7 @@ class CodexBackend {
     const result = await this.rpc.request('model/list', {});
     return (result.data || []).map(model => ({ label: model.displayName || model.model, value: model.model, isDefault: model.isDefault === true }));
   }
-  async run(text) {
+  async run(text, _history, images = []) {
     this.cancelled = false;
     await this.connect();
     if (this.cancelled) return;
@@ -53,7 +53,8 @@ class CodexBackend {
     // Register completion before turn/start: very short turns can finish before its response.
     return new Promise((resolve, reject) => {
       this.finish = error => { if (!this.finish) return; this.finish = undefined; this.turnId = undefined; error ? reject(error) : resolve(); };
-      this.rpc.request('turn/start', { threadId: this.session.backendId, input: [{ type: 'text', text }], cwd: this.session.root,
+      const input = [{ type: 'text', text }, ...images.map(({ mime, data }) => ({ type: 'image', url: `data:${mime};base64,${data}` }))];
+      this.rpc.request('turn/start', { threadId: this.session.backendId, input, cwd: this.session.root,
         ...permissions.turn,
         ...(this.session.model ? { model: this.session.model } : {}) }).then(async result => {
         if (!this.finish) return;
@@ -122,9 +123,24 @@ class OllamaBackend {
   async run(text, history) {
     if (!this.session.model) throw new Error(t('Selecciona un modelo instalado de Ollama.'));
     this.controller = new AbortController();
-    const messages = history.filter(m => ['user', 'assistant'].includes(m.role) && !m.failed).map(m => ({ role: m.role, content: m.contextText || m.text }));
+    const messages = history.filter(m => ['user', 'assistant'].includes(m.role) && !m.failed).map(m => ({
+      role: m.role, content: m.contextText || m.text, ...(m.images?.length ? { images: m.images } : {})
+    }));
     const { signal } = this.controller;
     const base = await cli.ollamaEndpoint(this.config);
+    const visionRequired = messages.some(message => message.images?.length);
+    const visionError = () => new Error(t('El modelo de Ollama «{0}» no admite imágenes. Selecciona un modelo con visión.', this.session.model));
+    if (visionRequired) {
+      const result = await fetch(base + '/api/show', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: this.session.model }), signal });
+      if (result.ok) {
+        const model = await result.json();
+        if (Array.isArray(model.capabilities) && !model.capabilities.includes('vision')) {
+          if (messages.at(-1)?.images?.length) throw visionError();
+          for (const message of messages) delete message.images;
+        }
+      }
+    }
     let remainingCalls = 8;
     let withTools = true;
     let round = 0;
@@ -133,6 +149,7 @@ class OllamaBackend {
         body: JSON.stringify({ model: this.session.model, messages, stream: true, ...(withTools ? { tools } : {}) }), signal });
       if (!result.ok) {
         const detail = await result.json().catch(() => null);
+        if (visionRequired && /does not support (?:vision|images)|vision is not supported/iu.test(detail?.error || '')) throw visionError();
         if (withTools && /does not support tools|tool calling is not supported/iu.test(detail?.error || '')) {
           this.emit({ type: 'activity', id: 'ollama-tools-unavailable', text: t('Este modelo de Ollama no admite herramientas. Selecciona un modelo compatible para leer archivos.') });
           withTools = false;

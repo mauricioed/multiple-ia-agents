@@ -107,10 +107,40 @@ const notice = el('p', '', 'notice'); notice.setAttribute('role', 'status');
 const composer = el('form', undefined, 'composer');
 const attachmentList = el('div', undefined, 'attachments');
 const input = el('textarea'); input.placeholder = t('Describe lo que quieres hacer…'); input.setAttribute('aria-label', t('Mensaje para el agente')); input.rows = 3; input.value = previous.draft || '';
+const resizeHandle = el('button', undefined, 'composer-resize');
+resizeHandle.type = 'button';
+resizeHandle.title = t('Ajustar altura del campo de escritura');
+resizeHandle.setAttribute('aria-label', resizeHandle.title);
+let composerHeight = Number.isFinite(previous.composerHeight) ? previous.composerHeight : 96;
+let resizeDrag;
+function resizeComposer(height) {
+  composerHeight = Math.max(96, Math.min(height, Math.max(96, Math.floor(window.innerHeight * 0.65))));
+  input.style.height = `${composerHeight}px`;
+}
+resizeComposer(composerHeight);
+resizeHandle.addEventListener('pointerdown', event => {
+  if (event.button !== 0 || resizeDrag) return;
+  resizeHandle.setPointerCapture(event.pointerId);
+  resizeDrag = { id: event.pointerId, top: event.clientY, height: input.offsetHeight };
+});
+resizeHandle.addEventListener('pointermove', event => {
+  if (resizeDrag?.id === event.pointerId) resizeComposer(resizeDrag.height + resizeDrag.top - event.clientY);
+});
+resizeHandle.addEventListener('lostpointercapture', event => {
+  if (resizeDrag?.id !== event.pointerId) return;
+  resizeDrag = undefined;
+  remember();
+});
+resizeHandle.addEventListener('keydown', event => {
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+  event.preventDefault();
+  resizeComposer(input.offsetHeight + (event.key === 'ArrowUp' ? 24 : -24));
+  remember();
+});
 const toolbar = el('div', undefined, 'composer-toolbar');
 const left = el('div', undefined, 'toolbar-left');
-left.append(button('＋', t('Adjuntar archivos de texto de la carpeta'), async () => {
-  const chosen = await rpc('attach');
+left.append(button('＋', t('Adjuntar texto e imágenes de la carpeta'), async () => {
+  const chosen = await rpc('attach', { attachments });
   for (const segments of chosen || []) if (!attachments.some(a => JSON.stringify(a) === JSON.stringify(segments))) attachments.push(segments);
   renderAttachments(); remember();
 }, 'attach'));
@@ -190,10 +220,10 @@ model.addEventListener('focus', loadModels); model.addEventListener('pointerdown
 model.addEventListener('change', () => rpc('model', { value: model.value }).catch(error));
 const send = button('↑', t('Enviar mensaje'), () => submit(), 'send');
 right.append(model, ollamaPicker, send); toolbar.append(left, right);
-composer.append(attachmentList, input, toolbar); footer.append(approvals, notice, composer);
+composer.append(resizeHandle, attachmentList, input, toolbar); footer.append(approvals, notice, composer);
 const footnote = el('p', t('Enter envía · Mayús+Enter añade una línea'), 'footnote'); footer.append(footnote);
 root.replaceChildren(header, pathLabel, conversation, footer);
-function remember() { api.setState({ sessionId: state?.session.id || previous.sessionId, draft: input.value, attachments }); }
+function remember() { api.setState({ sessionId: state?.session.id || previous.sessionId, draft: input.value, attachments, composerHeight }); }
 input.addEventListener('input', remember);
 input.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit().catch(error); } });
 composer.addEventListener('submit', event => { event.preventDefault(); submit().catch(error); });

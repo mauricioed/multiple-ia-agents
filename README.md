@@ -1,6 +1,6 @@
 # Multiple AI Agent Chats
 
-![VS Code ^1.145.0](https://img.shields.io/badge/VS%20Code-%5E1.145.0-4377bd) ![Versión 0.1.19](https://img.shields.io/badge/versi%C3%B3n-0.1.19-655bd5) [![Licencia MIT](https://img.shields.io/badge/licencia-MIT-56964d)](LICENSE)
+![VS Code ^1.145.0](https://img.shields.io/badge/VS%20Code-%5E1.145.0-4377bd) ![Versión 0.1.20](https://img.shields.io/badge/versi%C3%B3n-0.1.20-655bd5) [![Licencia MIT](https://img.shields.io/badge/licencia-MIT-56964d)](LICENSE)
 
 Gestiona chats de Codex, Claude Code y Ollama y sesiones de terminal desde la barra lateral **AI Agents** de VS Code. Cada sesión se vincula a la carpeta que elijas. Al cambiar de sesión, el explorador muestra los archivos de la carpeta correspondiente.
 

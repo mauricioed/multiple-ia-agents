@@ -12,10 +12,18 @@ const { backend } = require('./backends');
 const { openOfficialClaude, OfficialClaudeTabs } = require('./official-claude');
 const { MODES, permissionMode } = require('./permissions');
 const MAX_CONTEXT = 128 * 1024;
+const MAX_IMAGE = 5 * 1024 * 1024;
+const MAX_IMAGES_TOTAL = 10 * 1024 * 1024;
 const md = new MarkdownIt({ html: false, linkify: false, breaks: true });
 md.disable('image');
 const validateMarkdownLink = md.validateLink;
 md.validateLink = url => /^file:\/\/\//iu.test(url) || validateMarkdownLink(url);
+
+function imageType(bytes) {
+  if (bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+}
 
 class ChatSessions extends TerminalSessions {
   constructor(context, output) {
@@ -188,12 +196,17 @@ class ChatSessions extends TerminalSessions {
         prompt.resolve(prompt.question ? String(message.answer || '').slice(0, 10000) : message.accept === true); reply(true); return;
       }
       if (message.action === 'attach') {
-        const chosen = await vscode.window.showOpenDialog({ canSelectMany: true, canSelectFiles: true, canSelectFolders: false, defaultUri: vscode.Uri.file(session.root), openLabel: t('Adjuntar archivos de texto') });
+        const chosen = await vscode.window.showOpenDialog({ canSelectMany: true, canSelectFiles: true, canSelectFolders: false, defaultUri: vscode.Uri.file(session.root), openLabel: t('Adjuntar texto e imágenes') });
         const names = [];
         for (const uri of chosen || []) {
           if (uri.scheme !== 'file') throw new Error(t('Selecciona archivos locales.'));
           const relative = path.relative(session.root, uri.fsPath).split(path.sep);
-          await core.resolveEntry(session.root, relative); names.push(relative);
+          names.push(relative);
+        }
+        if (names.length) {
+          const existing = Array.isArray(message.attachments) ? message.attachments : [];
+          const unique = new Map([...existing, ...names].map(segments => [JSON.stringify(segments), segments]));
+          await this.collectContext(session, [...unique.values()]);
         }
         reply(names); return;
       }
@@ -244,13 +257,17 @@ class ChatSessions extends TerminalSessions {
       await vscode.env.openExternal(vscode.Uri.parse(url));
       return;
     }
-    const invalid = () => new Error(t('Enlace de carpeta no válido.'));
+    const invalid = () => new Error(t('Enlace local no válido.'));
     if (typeof url !== 'string' || !url || url.startsWith('#')) throw invalid();
+    const [destination, fragment] = url.split(/[#?]/u, 2);
+    const position = /:(\d+)(?::(\d+))?$/u.exec(destination);
+    const anchor = position || /^L(\d+)(?:C(\d+))?$/iu.exec(fragment || '');
+    const destinationPath = position ? destination.slice(0, position.index) : destination;
     let localPath;
     try {
-      localPath = /^file:\/\/\//iu.test(url)
-        ? fileURLToPath(url)
-        : decodeURIComponent(url.split(/[?#]/u, 1)[0]);
+      localPath = /^file:\/\/\//iu.test(destinationPath)
+        ? fileURLToPath(destinationPath)
+        : decodeURIComponent(destinationPath);
     } catch { throw invalid(); }
     if (process.platform === 'win32') localPath = localPath.replace(/^\/(?=[a-z]:\/)/iu, '');
     const pathWithoutDrive = process.platform === 'win32' ? localPath.replace(/^[a-z]:[\\/]/iu, '') : localPath;
@@ -259,8 +276,23 @@ class ChatSessions extends TerminalSessions {
     if (!core.inside(session.root, candidate)) throw invalid();
     const relative = path.relative(session.root, candidate);
     const target = await core.resolveEntry(session.root, relative ? relative.split(path.sep) : []);
-    if (!(await fs.stat(target)).isDirectory()) throw invalid();
-    if (!await vscode.env.openExternal(vscode.Uri.file(target))) throw new Error(t('No se pudo abrir la carpeta.'));
+    const stat = await fs.stat(target);
+    const uri = vscode.Uri.file(target);
+    if (stat.isDirectory()) {
+      if (!await vscode.env.openExternal(uri)) throw new Error(t('No se pudo abrir la carpeta.'));
+      return;
+    }
+    if (!stat.isFile()) throw invalid();
+    if (!anchor) {
+      await vscode.commands.executeCommand('vscode.open', uri);
+      return;
+    }
+    const line = Number(anchor[1]);
+    const column = Number(anchor[2] || 1);
+    if (!Number.isSafeInteger(line) || !Number.isSafeInteger(column) || line < 1 || column < 1) throw invalid();
+    await vscode.commands.executeCommand('vscode.open', uri, {
+      selection: new vscode.Range(line - 1, column - 1, line - 1, column - 1)
+    });
   }
   async downloadOllamaModel(session) {
     if (session.provider !== 'ollama') throw new Error(t('La descarga de modelos corresponde a Ollama.'));
@@ -292,16 +324,35 @@ class ChatSessions extends TerminalSessions {
   }
   async collectContext(session, attachments) {
     if (!Array.isArray(attachments) || attachments.length > 10) throw new Error(t('Adjunta como máximo 10 archivos.'));
-    let total = 0; const chunks = [];
+    let total = 0; let imageTotal = 0;
+    const chunks = []; const images = [];
     for (const segments of attachments) {
       const target = await core.resolveEntry(session.root, segments); const stat = await fs.stat(target);
-      if (!stat.isFile() || stat.size > MAX_CONTEXT) throw new Error(t('Los adjuntos deben ser archivos de texto de hasta 128 KB.'));
-      const bytes = await fs.readFile(target); total += bytes.length;
-      if (bytes.includes(0)) throw new Error(t('No se pueden adjuntar archivos binarios.'));
-      chunks.push(`Archivo adjunto: ${segments.join('/')}\n${new TextDecoder('utf-8', { fatal: true }).decode(bytes)}`);
+      const name = segments.join('/');
+      const invalid = () => new Error(t('No se puede adjuntar «{0}». Selecciona texto UTF-8, texto UTF-16 con BOM o una imagen PNG, JPEG o WebP.', name));
+      if (!stat.isFile()) throw invalid();
+      const tooBig = () => new Error(t('El archivo «{0}» supera el límite de 5 MB por imagen.', name));
+      if (stat.size > MAX_IMAGE) throw tooBig();
+      const bytes = await fs.readFile(target);
+      if (bytes.length > MAX_IMAGE) throw tooBig();
+      const mime = imageType(bytes);
+      if (mime) {
+        imageTotal += bytes.length;
+        if (imageTotal > MAX_IMAGES_TOTAL) throw new Error(t('Las imágenes adjuntas superan los 10 MB en total.'));
+        images.push({ mime, data: bytes.toString('base64') });
+        continue;
+      }
+      total += bytes.length;
+      if (total > MAX_CONTEXT) throw new Error(t('El contexto supera los 128 KB. Adjunta menos archivos o selecciona un fragmento.'));
+      const encoding = bytes[0] === 0xff && bytes[1] === 0xfe ? 'utf-16le'
+        : bytes[0] === 0xfe && bytes[1] === 0xff ? 'utf-16be' : 'utf-8';
+      let content;
+      try { content = new TextDecoder(encoding, { fatal: true }).decode(bytes); }
+      catch { throw invalid(); }
+      if (content.includes('\0')) throw invalid();
+      chunks.push(`Archivo adjunto: ${name}\n${content}`);
     }
-    if (total > MAX_CONTEXT) throw new Error(t('El contexto supera los 128 KB. Adjunta menos archivos o selecciona un fragmento.'));
-    return chunks.join('\n\n');
+    return { text: chunks.join('\n\n'), images };
   }
   async send(session, text, attachments = []) {
     if (session.provider === 'claude') throw new Error(t('Utiliza el chat oficial de Claude.'));
@@ -309,23 +360,26 @@ class ChatSessions extends TerminalSessions {
     if (this.running.has(session.id)) throw new Error(t('Ya hay una respuesta en curso en este chat.'));
     if (typeof text !== 'string' || !text.trim() || text.length > 100000) throw new Error(t('Escribe un mensaje de hasta 100.000 caracteres.'));
     let run = { controller: new AbortController(), ids: new Map(), id: randomUUID() };
-    let submitted = false;
+    let submitted;
     const messages = await this.history(session);
     if (this.running.has(session.id)) throw new Error(t('Ya hay una respuesta en curso en este chat.'));
     this.running.set(session.id, run);
     let permission = session.permission;
     try {
-      const context = await this.collectContext(session, attachments);
+      const { text: context, images } = await this.collectContext(session, attachments);
       if (run.controller.signal.aborted) return;
       const prompt = `${text.trim()}${context ? `\n\n<user_supplied_context>\n${context}\n</user_supplied_context>` : ''}`;
-      messages.push({ id: randomUUID(), role: 'user', text: text.trim(), contextText: prompt, attachments, created: Date.now() });
-      submitted = true;
+      submitted = { id: randomUUID(), role: 'user', text: text.trim(), contextText: prompt, attachments,
+        ...(session.provider === 'ollama' && images.length ? { images: images.map(image => image.data) } : {}),
+        created: Date.now() };
+      messages.push(submitted);
       session.updated = Date.now();
       await this.saveHistory(session); this.pushChat(session);
       let turnInput = prompt;
+      let turnImages = images;
       while (!run.controller.signal.aborted) {
         try {
-          await this.getBackend(session).run(turnInput, messages);
+          await this.getBackend(session).run(turnInput, messages, turnImages);
         } catch (error) {
           if (!run.controller.signal.aborted) throw error;
         }
@@ -337,6 +391,7 @@ class ChatSessions extends TerminalSessions {
         permission = session.permission;
         messages.push({ id: randomUUID(), role: 'activity', text: t('Continuando con el nuevo modo de permisos.'), created: Date.now() });
         turnInput = t('Continúa la tarea anterior desde donde se interrumpió. Revisa qué pasos ya se completaron antes de actuar y vuelve a evaluar la acción pendiente con el modo de permisos actual.');
+        turnImages = [];
         await this.saveHistory(session);
         this.pushChat(session);
       }
@@ -345,6 +400,10 @@ class ChatSessions extends TerminalSessions {
       } else if (run.controller.signal.aborted) messages.push({ id: randomUUID(), role: 'activity', text: t('Respuesta detenida.'), created: Date.now() });
     } catch (error) {
       if (!submitted) throw error;
+      if (submitted.images) {
+        submitted.failed = true;
+        delete submitted.images;
+      }
       const description = error.message;
       if (!run.controller.signal.aborted) messages.push({ id: randomUUID(), role: 'error', text: description, created: Date.now() });
       else messages.push({ id: randomUUID(), role: 'activity', text: t('Respuesta detenida.'), created: Date.now() });
@@ -423,7 +482,7 @@ class ChatSessions extends TerminalSessions {
     if (entry) this.terminals.delete(entry[0]);
   }
   pushChat(session, notice) {
-    const messages = (this.histories.get(session.id) || []).map(({ contextText, ...entry }) => ({ ...entry, ...(entry.role === 'assistant' ? { html: md.render(entry.text) } : {}) }));
+    const messages = (this.histories.get(session.id) || []).map(({ contextText, images, ...entry }) => ({ ...entry, ...(entry.role === 'assistant' ? { html: md.render(entry.text) } : {}) }));
     this.panels.get(session.id)?.webview.postMessage({ type: 'chat', session, messages: messages.filter(entry => entry.role !== 'context'), running: this.running.has(session.id), notice,
       approvals: [...this.approvals.values()].filter(p => p.sessionId === session.id).map(({ resolve, ...prompt }) => prompt),
       sessions: this.sessions.filter(s => !s.closed).map(s => ({ id: s.id, name: s.name, provider: s.provider, root: s.root })) });

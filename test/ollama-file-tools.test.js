@@ -54,6 +54,33 @@ test('Ollama lists and reads files through tool calls, then streams its answer',
   assert.equal(events.find(event => event.type === 'delta').text, 'Leído.');
 });
 
+test('Ollama handles a root listing emitted as split JSON text', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ollama-text-call-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  await fs.writeFile(path.join(root, 'spec.md'), '');
+  t.mock.method(cli, 'ollamaEndpoint', async () => 'http://localhost:11434');
+  const fetch = t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const { messages } = JSON.parse(options.body);
+    if (messages.length === 1) {
+      return new Response([
+        { message: { content: ' {"name": "list_chat_directory",' } },
+        { message: { content: ' "arguments": {"offset": 0, "path": "."}} ' } },
+        { done: true }
+      ].map(event => JSON.stringify(event)).join('\n'));
+    }
+    assert.equal(messages.at(-2).content, '');
+    assert.equal(messages.at(-1).role, 'tool');
+    assert.equal(messages.at(-1).tool_name, 'list_chat_directory');
+    assert.deepEqual(JSON.parse(messages.at(-1).content).entries.map(entry => entry.name), ['spec.md']);
+    return Response.json({ message: { content: '{"files":["spec.md"]}' }, done: true });
+  });
+  const events = [];
+  const agent = new OllamaBackend({ root, model: 'qwen2.5' }, '', event => events.push(event));
+  await agent.run('List files', [{ role: 'user', text: 'List files' }]);
+  assert.equal(fetch.mock.callCount(), 2);
+  assert.deepEqual(events.filter(event => event.type === 'delta').map(event => event.text), ['{"files":["spec.md"]}']);
+});
+
 test('Ollama keeps chat available when the model rejects tools', async t => {
   t.mock.method(cli, 'ollamaEndpoint', async () => 'http://localhost:11434');
   const fetch = t.mock.method(globalThis, 'fetch', async (url, options) => {

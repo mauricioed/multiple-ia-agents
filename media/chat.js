@@ -6,6 +6,8 @@ let state; let sequence = 0; let loadedModels = false; let loadingModels = false
 const pending = new Map();
 const previous = api.getState() || {};
 let attachments = Array.isArray(previous.attachments) ? previous.attachments : [];
+let pastedImages = [];
+let readingClipboard = false;
 function el(tag, text, className) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; }
 function rpc(action, data = {}) {
   return new Promise((resolve, reject) => {
@@ -106,7 +108,15 @@ const approvals = el('section', undefined, 'approvals'); approvals.setAttribute(
 const notice = el('p', '', 'notice'); notice.setAttribute('role', 'status');
 const composer = el('form', undefined, 'composer');
 const attachmentList = el('div', undefined, 'attachments');
-const input = el('textarea'); input.placeholder = t('Describe lo que quieres hacer…'); input.setAttribute('aria-label', t('Mensaje para el agente')); input.rows = 3; input.value = previous.draft || '';
+const input = el('div', undefined, 'composer-input');
+input.contentEditable = 'true';
+input.setAttribute('role', 'textbox');
+input.setAttribute('aria-multiline', 'true');
+input.setAttribute('aria-label', t('Mensaje para el agente'));
+input.dataset.placeholder = t('Describe lo que quieres hacer…');
+if (typeof previous.draftHtml === 'string') input.append(composerFragment(previous.draftHtml));
+else input.textContent = previous.draft || '';
+const editor = createComposerEditor(input, message => error(message));
 const resizeHandle = el('button', undefined, 'composer-resize');
 resizeHandle.type = 'button';
 resizeHandle.title = t('Ajustar altura del campo de escritura');
@@ -220,25 +230,88 @@ model.addEventListener('focus', loadModels); model.addEventListener('pointerdown
 model.addEventListener('change', () => rpc('model', { value: model.value }).catch(error));
 const send = button('↑', t('Enviar mensaje'), () => submit(), 'send');
 right.append(model, ollamaPicker, send); toolbar.append(left, right);
-composer.append(resizeHandle, attachmentList, input, toolbar); footer.append(approvals, notice, composer);
+composer.append(resizeHandle, attachmentList, input, editor.toolbar, toolbar); footer.append(approvals, notice, composer);
 const footnote = el('p', t('Enter envía · Mayús+Enter añade una línea'), 'footnote'); footer.append(footnote);
 root.replaceChildren(header, pathLabel, conversation, footer);
-function remember() { api.setState({ sessionId: state?.session.id || previous.sessionId, draft: input.value, attachments, composerHeight }); }
+function remember() { api.setState({ sessionId: state?.session.id || previous.sessionId, draftHtml: input.innerHTML, attachments, composerHeight }); }
 input.addEventListener('input', remember);
 input.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit().catch(error); } });
+input.addEventListener('dragover', event => event.preventDefault());
+input.addEventListener('drop', event => event.preventDefault());
+input.addEventListener('paste', event => {
+  const clipboard = event.clipboardData;
+  if (!clipboard) return;
+  event.preventDefault();
+  const text = clipboard.getData('text/plain');
+  if (text) editor.insertText(text);
+  const files = [...clipboard.files].filter(file => file.type.startsWith('image/'));
+  if (!files.length) {
+    for (const item of clipboard.items) {
+      if (item.kind !== 'file' || !item.type.startsWith('image/')) continue;
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+  }
+  if (files.length) pasteImages(files).catch(error);
+});
+async function pasteImages(files) {
+  if (readingClipboard) { error(composerT('No se pudo leer la imagen del portapapeles.')); return; }
+  if (pastedImages.length + attachments.length + files.length > 10) throw new Error(composerT('Adjunta como máximo 10 archivos.'));
+  const maxImage = 5 * 1024 * 1024;
+  if (files.some(file => !/^image\/(png|jpeg|webp)$/.test(file.type) || !file.size || file.size > maxImage)) {
+    throw new Error(composerT('Pega imágenes PNG, JPEG o WebP de hasta 5 MB.'));
+  }
+  if ([...pastedImages, ...files].reduce((total, item) => total + item.size, 0) > 2 * maxImage) {
+    throw new Error(composerT('Las imágenes adjuntas superan los 10 MB en total.'));
+  }
+  readingClipboard = true;
+  try {
+    const images = await Promise.all(files.map(file => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ mime: file.type, data: reader.result.split(',')[1], size: file.size });
+      reader.onerror = () => reject(new Error(composerT('No se pudo leer la imagen del portapapeles.')));
+      reader.readAsDataURL(file);
+    })));
+    if (pastedImages.length + attachments.length + images.length > 10) throw new Error(composerT('Adjunta como máximo 10 archivos.'));
+    pastedImages.push(...images);
+    renderAttachments();
+  } finally { readingClipboard = false; }
+}
 composer.addEventListener('submit', event => { event.preventDefault(); submit().catch(error); });
 function renderAttachments() {
   attachmentList.replaceChildren();
   attachments.forEach((segments, index) => attachmentList.append(button(`◇ ${segments.join('/')} ×`, t('Quitar {0}', segments.join('/')), () => { attachments.splice(index, 1); renderAttachments(); remember(); }, 'chip')));
+  pastedImages.forEach((image, index) => {
+    const label = composerT('Imagen pegada {0}', index + 1);
+    const chip = button(label + ' ×', t('Quitar {0}', label), () => {
+      pastedImages.splice(index, 1); renderAttachments();
+    }, 'chip');
+    const thumbnail = el('img');
+    thumbnail.src = 'data:' + image.mime + ';base64,' + image.data;
+    thumbnail.alt = '';
+    chip.prepend(thumbnail);
+    attachmentList.append(chip);
+  });
 }
 async function submit() {
   if (state?.running) { await rpc('stop'); return; }
-  if (submitting || !input.value.trim()) return;
+  if (submitting || readingClipboard) return;
+  const text = composerMarkdown(input).trim();
+  if (!text && !pastedImages.length && !attachments.length) return;
   if (state?.session.provider === 'ollama' && !state.session.model) { notice.textContent = t('Descarga o selecciona un modelo de Ollama antes de enviar.'); return; }
-  const text = input.value; const chosen = attachments; submitting = true; send.disabled = true;
-  input.value = ''; attachments = []; renderAttachments(); remember();
-  try { await rpc('send', { text, attachments: chosen }); }
-  catch (err) { if (!input.value) { input.value = text; attachments = chosen; renderAttachments(); remember(); } error(err); }
+  const draftHtml = input.innerHTML;
+  const formatted = input.querySelector('a,b,blockquote,em,font,hr,i,ol,pre,s,span[style],strike,strong,table,u,ul,div[style],p[style]') ? draftHtml : undefined;
+  const chosen = attachments;
+  const clipboard = pastedImages;
+  submitting = true; send.disabled = true;
+  input.replaceChildren(); attachments = []; pastedImages = []; renderAttachments(); remember();
+  try { await rpc('send', { text, attachments: chosen, pastedImages: clipboard.map(({ mime, data }) => ({ mime, data })), formatted }); }
+  catch (err) {
+    if (!input.hasChildNodes() && !attachments.length && !pastedImages.length && !readingClipboard) {
+      input.append(composerFragment(draftHtml)); attachments = chosen; pastedImages = clipboard; renderAttachments(); remember();
+    }
+    error(err);
+  }
   finally { submitting = false; send.disabled = false; input.focus(); }
 }
 agent.addEventListener('change', () => { const selected = agent.value; agent.value = state.session.provider; rpc('agent', { value: selected }).catch(error); });
@@ -302,7 +375,19 @@ function render() {
         body.querySelectorAll('a').forEach(link => link.addEventListener('click', event => { event.preventDefault(); rpc('link', { url: link.getAttribute('href') }).catch(error); }));
         body.querySelectorAll('pre').forEach(pre => pre.append(copyButton(t('Copiar código'), () => pre.querySelector('code')?.textContent || '', 'copy-code')));
         row.append(copyButton(t('Copiar respuesta'), () => entry.text, 'copy-answer'));
-      } else { row.append(el('div', entry.text, 'message-text')); if (entry.attachments?.length) row.append(el('div', entry.attachments.map(a => a.join('/')).join(' · '), 'attachment-caption')); }
+      } else {
+        if (entry.role === 'user' && typeof entry.formatted === 'string') {
+          const body = el('div', undefined, 'markdown formatted-message');
+          body.append(composerFragment(entry.formatted));
+          body.querySelectorAll('a').forEach(link => link.addEventListener('click', event => {
+            event.preventDefault(); rpc('link', { url: link.getAttribute('href') }).catch(error);
+          }));
+          row.append(body);
+        } else row.append(el('div', entry.text, 'message-text'));
+        const labels = (entry.attachments || []).map(a => a.join('/'));
+        for (let index = 0; index < Math.min(10, entry.pastedImageCount); index++) labels.push(composerT('Imagen pegada {0}', index + 1));
+        if (labels.length) row.append(el('div', labels.join(' · '), 'attachment-caption'));
+      }
       messages.append(row);
     }
     lastContent = transcript;

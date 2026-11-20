@@ -181,14 +181,14 @@ class ChatSessions extends TerminalSessions {
   chatHtml(webview) {
     const nonce = randomBytes(18).toString('base64');
     const asset = name => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', name));
-    return `<!DOCTYPE html><html lang="${language}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';"><link rel="stylesheet" href="${asset('chat.css')}"><link rel="stylesheet" href="${asset('controls.css')}"><title>${t('Chat del agente')}</title></head><body><div id="app"><p role="status">${t('Cargando conversacion...')}</p></div><script nonce="${nonce}" src="${asset('i18n.js')}"></script><script nonce="${nonce}" src="${asset('icons.js')}"></script><script nonce="${nonce}" src="${asset('chat.js')}"></script></body></html>`;
+    return `<!DOCTYPE html><html lang="${language}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';"><link rel="stylesheet" href="${asset('chat.css')}"><link rel="stylesheet" href="${asset('controls.css')}"><title>${t('Chat del agente')}</title></head><body><div id="app"><p role="status">${t('Cargando conversacion...')}</p></div><script nonce="${nonce}" src="${asset('i18n.js')}"></script><script nonce="${nonce}" src="${asset('icons.js')}"></script><script nonce="${nonce}" src="${asset('composer-editor.js')}"></script><script nonce="${nonce}" src="${asset('chat.js')}"></script></body></html>`;
   }
   async handleChat(session, panel, message) {
     if (this.panels.get(session.id) !== panel || !message || typeof message.action !== 'string') return;
     const reply = (result, error) => panel.webview.postMessage({ type: 'reply', requestId: message.requestId, result, error });
     try {
       if (message.action === 'ready') { this.pushChat(session); return; }
-      if (message.action === 'send') { await this.send(session, message.text, message.attachments); reply(true); return; }
+      if (message.action === 'send') { await this.send(session, message.text, message.attachments, message.pastedImages, message.formatted); reply(true); return; }
       if (message.action === 'stop') { await this.stopSession(session); reply(true); return; }
       if (message.action === 'approval') {
         const prompt = this.approvals.get(message.id);
@@ -322,10 +322,21 @@ class ChatSessions extends TerminalSessions {
     this.backends.get(id)?.dispose(); this.backends.delete(id);
     const terminal = this.terminals.get(id); this.terminals.delete(id); terminal?.dispose();
   }
-  async collectContext(session, attachments) {
-    if (!Array.isArray(attachments) || attachments.length > 10) throw new Error(t('Adjunta como máximo 10 archivos.'));
+  async collectContext(session, attachments, pastedImages = []) {
+    if (!Array.isArray(attachments) || !Array.isArray(pastedImages) || attachments.length + pastedImages.length > 10) throw new Error(t('Adjunta como máximo 10 archivos.'));
     let total = 0; let imageTotal = 0;
     const chunks = []; const images = [];
+    for (const image of pastedImages) {
+      const invalid = () => new Error(t('Pega imágenes PNG, JPEG o WebP de hasta 5 MB.'));
+      const data = image?.data;
+      if (typeof data !== 'string' || !data || data.length > 4 * Math.ceil(MAX_IMAGE / 3) || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) throw invalid();
+      const bytes = Buffer.from(data, 'base64');
+      const mime = imageType(bytes);
+      if (!mime || mime !== image.mime || bytes.length > MAX_IMAGE || bytes.toString('base64') !== data) throw invalid();
+      imageTotal += bytes.length;
+      if (imageTotal > MAX_IMAGES_TOTAL) throw new Error(t('Las imágenes adjuntas superan los 10 MB en total.'));
+      images.push({ mime, data });
+    }
     for (const segments of attachments) {
       const target = await core.resolveEntry(session.root, segments); const stat = await fs.stat(target);
       const name = segments.join('/');
@@ -354,11 +365,11 @@ class ChatSessions extends TerminalSessions {
     }
     return { text: chunks.join('\n\n'), images };
   }
-  async send(session, text, attachments = []) {
+  async send(session, text, attachments = [], pastedImages = [], formatted) {
     if (session.provider === 'claude') throw new Error(t('Utiliza el chat oficial de Claude.'));
     if (session.closed) throw new Error(t('Reabre el chat antes de enviar.'));
     if (this.running.has(session.id)) throw new Error(t('Ya hay una respuesta en curso en este chat.'));
-    if (typeof text !== 'string' || !text.trim() || text.length > 100000) throw new Error(t('Escribe un mensaje de hasta 100.000 caracteres.'));
+    if (typeof text !== 'string' || text.length > 100000) throw new Error(t('Escribe un mensaje de hasta 100.000 caracteres.'));
     let run = { controller: new AbortController(), ids: new Map(), id: randomUUID() };
     let submitted;
     const messages = await this.history(session);
@@ -366,10 +377,14 @@ class ChatSessions extends TerminalSessions {
     this.running.set(session.id, run);
     let permission = session.permission;
     try {
-      const { text: context, images } = await this.collectContext(session, attachments);
+      const { text: context, images } = await this.collectContext(session, attachments, pastedImages);
+      if (!text.trim() && !context && !images.length) throw new Error(t('Escribe un mensaje.'));
       if (run.controller.signal.aborted) return;
-      const prompt = `${text.trim()}${context ? `\n\n<user_supplied_context>\n${context}\n</user_supplied_context>` : ''}`;
-      submitted = { id: randomUUID(), role: 'user', text: text.trim(), contextText: prompt, attachments,
+      const displayText = text.trim() || t('Revisa los archivos adjuntos.');
+      const prompt = `${displayText}${context ? `\n\n<user_supplied_context>\n${context}\n</user_supplied_context>` : ''}`;
+      submitted = { id: randomUUID(), role: 'user', text: displayText, contextText: prompt, attachments,
+        ...(typeof formatted === 'string' && formatted.length <= 250000 ? { formatted } : {}),
+        ...(pastedImages.length ? { pastedImageCount: pastedImages.length } : {}),
         ...(session.provider === 'ollama' && images.length ? { images: images.map(image => image.data) } : {}),
         created: Date.now() };
       messages.push(submitted);

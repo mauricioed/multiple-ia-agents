@@ -1,4 +1,5 @@
 {
+    "extension.description": "Gestiona chats de Codex y Ollama, abre el chat oficial de Claude Code y ejecuta terminales de agentes en VS Code.",
     "ui.1": "Nuevo chat",
     "ui.2": "Mostrar AI Agents (sin medidores)",
     "ui.3": "Actualizar archivos del chat",
@@ -14,7 +15,6 @@
     "ui.14": "Ruta opcional al Codex instalado por el usuario.",
     "ui.16": "Ruta opcional al Ollama instalado por el usuario.",
     "ui.17": "Nuevo chat con agente",
-    "extension.description": "Paneles independientes de Codex y Ollama y acceso al chat oficial de Claude.",
     "ui.18": "Nueva terminal con agente",
     "ui.19": "Terminal sin agente",
     "ui.20": "Ruta opcional al ejecutable de Claude instalado por el usuario, solo para sesiones de terminal."

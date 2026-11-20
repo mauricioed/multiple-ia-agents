@@ -1,14 +1,21 @@
+## 0.1.21
+
+- Add a rich message editor and support pasting text and images into custom chats.
+- Localize the extension description in English and Spanish.
+- Handle file tool calls returned as plain JSON by Ollama models such as Qwen 2.5.
+- Show extension details in English with sections for Codex, Claude Code, and Ollama.
+
 ## 0.1.20
 
-- Permite ampliar hacia arriba el campo de escritura del chat.
-- Admite adjuntos de texto e imagen (PNG, JPEG y WebP) y enlaces locales con línea y columna.
-- Añade las etiquetas Claude, Codex y Ollama a la ficha de la extensión.
-- Actualiza el icono con un reflejo sobre el fondo.
+- Allow the chat input to expand upward.
+- Support text and image attachments (PNG, JPEG, and WebP) and local links with line and column positions.
+- Add Claude, Codex, and Ollama tags to the extension listing.
+- Update the icon with a highlight over the background.
 
 ## 0.1.19
 
-- Unifica en español la descripción y las insignias del Marketplace.
-- Usa la URL directa del GIF de demostración en GitHub.
+- Use Spanish for the Marketplace description and badges.
+- Use the direct URL for the demo GIF on GitHub.
 
 ## 0.1.18
 
@@ -72,22 +79,22 @@
 
 ## 0.1.4
 
-- Permite abrir el panel de Ollama aunque su programa no este instalado o su servidor no responda.
+- Allow the Ollama panel to open when Ollama is missing or the server is unavailable.
 
 ## 0.1.3
 
-- Sincroniza el cierre del chat oficial de Claude con la lista de chats activos.
+- Sync the active chat list when the official Claude chat closes.
 
 ## 0.1.2
 
-- Corrige la inicialización del explorador para mostrar chats y carpetas al cargar el panel.
+- Fix explorer initialization so chats and folders appear when the panel loads.
 
-# Cambios
+# Changes
 
 ## 0.1.1
 
-- Identifica el panel como IA Agents para distinguirlo de la variante anterior.
-- Mantiene eliminadas las consultas y barras propias de utilización.
+- Name the panel IA Agents to distinguish it from the previous variant.
+- Keep usage queries and meters removed.
 
 ## 0.1.0
 

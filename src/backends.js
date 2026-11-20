@@ -117,6 +117,22 @@ class CodexBackend {
   dispose() { this.disposed = true; this.cancelled = true; for (const signal of this.approvalSignals.values()) signal.abort(); this.approvalSignals.clear(); this.rpc?.dispose(); }
 }
 
+function parseTextFileToolCall(content) {
+  let call;
+  try {
+    call = JSON.parse(content);
+  } catch {
+    return null;
+  }
+  if (!call || !tools.some(tool => tool.function.name === call.name)) return null;
+  if (Object.keys(call).length !== 2) return null;
+  const args = call.arguments;
+  if (!args || typeof args !== 'object' || Array.isArray(args) || typeof args.path !== 'string') return null;
+  if (Object.keys(args).some(key => key !== 'path' && key !== 'offset')) return null;
+  if ('offset' in args && (!Number.isSafeInteger(args.offset) || args.offset < 0)) return null;
+  return { function: { name: call.name, arguments: args } };
+}
+
 class OllamaBackend {
   constructor(session, config, emit, approve) { Object.assign(this, { session, config, emit, approve }); }
   async models() { return (await cli.listOllamaModels(this.config)).map(name => ({ label: name, value: name })); }
@@ -157,7 +173,7 @@ class OllamaBackend {
         }
         throw new Error(t('Ollama: {0}. Comprueba el servidor local y el modelo instalado.', result.status));
       }
-      const reply = await this.readResponse(result, round++);
+      const reply = await this.readResponse(result, round++, withTools);
       if (!reply.tool_calls.length || !withTools) return;
       if (reply.tool_calls.length > remainingCalls) throw new Error(t('Ollama superó el límite de lecturas en este turno. Pide menos archivos o fragmentos.'));
       messages.push(reply);
@@ -179,9 +195,11 @@ class OllamaBackend {
       withTools = remainingCalls > 0;
     }
   }
-  async readResponse(result, round) {
+  async readResponse(result, round, withTools) {
     const reply = { role: 'assistant', content: '', tool_calls: [] };
     const decoder = new TextDecoder(); let buffer = ''; let done = false;
+    let bufferingCall = withTools;
+    const emitText = text => this.emit({ type: 'delta', id: 'ollama-' + round, text });
     const consume = line => {
       if (!line.trim()) return;
       const event = JSON.parse(line);
@@ -189,7 +207,11 @@ class OllamaBackend {
       const message = event.message;
       if (message?.content) {
         reply.content += message.content;
-        this.emit({ type: 'delta', id: 'ollama-' + round, text: message.content });
+        if (!bufferingCall) emitText(message.content);
+        else if (/^\s*[^\s{]/u.test(reply.content)) {
+          bufferingCall = false;
+          emitText(reply.content);
+        }
       }
       if (message?.thinking) reply.thinking = (reply.thinking || '') + message.thinking;
       for (const call of message?.tool_calls || []) {
@@ -205,6 +227,13 @@ class OllamaBackend {
     }
     buffer += decoder.decode(); if (buffer.trim()) consume(buffer);
     if (!done) throw new Error(t('Ollama ha cerrado la conexión antes de terminar.'));
+    if (bufferingCall && reply.content) {
+      const call = parseTextFileToolCall(reply.content);
+      if (call) {
+        if (!reply.tool_calls.length) reply.tool_calls.push(call);
+        reply.content = '';
+      } else emitText(reply.content);
+    }
     return reply;
   }
   async stop() { this.controller?.abort(); }

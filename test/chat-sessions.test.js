@@ -64,6 +64,20 @@ test('attachment picker accepts a mix of UTF-16 text and images and rejects unsu
   await f.manager.handleChat(f.session, panel, { action: 'attach', requestId: 2, attachments: replies[0].result });
   assert.match(replies[1].error, /unsupported\.bin.*UTF-8/u);
 });
+test('pasted images reach the backend on an image-only turn and invalid data is rejected', async t => {
+  const f = await fixture(t);
+  const image = { mime: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==' };
+  let observed;
+  f.manager.getBackend = () => ({ run: async (prompt, _history, images) => { observed = { prompt, images }; } });
+  await f.manager.send(f.session, '', [], [image]);
+  assert.deepEqual(observed, { prompt: 'Revisa los archivos adjuntos.', images: [image] });
+  const [entry] = await f.manager.history(f.session);
+  assert.equal(entry.pastedImageCount, 1);
+  assert.deepEqual(entry.attachments, []);
+  await assert.rejects(f.manager.send(f.session, 'Invalid', [], [{ ...image, mime: 'image/jpeg' }]), /PNG, JPEG o WebP/u);
+  await assert.rejects(f.manager.send(f.session, 'Too many', [], Array(11).fill(image)), /10 archivos/u);
+  assert.equal((await f.manager.history(f.session)).length, 1);
+});
 test('concurrent chats remain independent; duplicate send is rejected', async t => {
   const f = await fixture(t); const second = f.manager.session('second'); second.provider = 'codex';
   let finish; const waiting = new Promise(resolve => { finish = resolve; });

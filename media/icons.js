@@ -17,7 +17,7 @@ function chatIcon(name) {
     code: 'M2 2h12v12H2zM6.5 6 5 8l1.5 2m3-4L11 8l-1.5 2',
     more: 'M3 8h.3m4.5 0h.3m4.5 0h.3',
     trash: 'M2 4h12M6 4V2h4v2M4 4l1 10h6l1-10M7 6v5m2-5v5',
-    formatting: 'M2 2h12v12H2zM2 6h12m-9 5 1.5-3L8 11m1-2h3m-3 2h3',
+    formatting: 'M2 12 5.5 3 9 12M3.2 9h4.6M10 4h4m-4 4h4m-4 4h4',
     model: 'M4 4h8v8H4ZM6 6h4v4H6ZM6 1v3M10 1v3M6 12v3M10 12v3M1 6h3M1 10h3M12 6h3M12 10h3',
     download: 'M8 1v9m-3-3 3 3 3-3M2 10v4h12v-4',
     expandAll: 'M5 2h9v9M2 5h9v9H2ZM4 9.5h5M6.5 7v5',

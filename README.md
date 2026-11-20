@@ -1,6 +1,6 @@
 # Multiple AI Agent Chats
 
-![VS Code ^1.145.0](https://img.shields.io/badge/VS%20Code-%5E1.145.0-4377bd) ![Version 0.1.22](https://img.shields.io/badge/version-0.1.22-655bd5) [![MIT License](https://img.shields.io/badge/license-MIT-56964d)](LICENSE)
+![VS Code ^1.145.0](https://img.shields.io/badge/VS%20Code-%5E1.145.0-4377bd) ![Version 0.1.26](https://img.shields.io/badge/version-0.1.26-655bd5) [![MIT License](https://img.shields.io/badge/license-MIT-56964d)](LICENSE)
 
 Manage Codex, Claude Code, and Ollama from the **AI Agents** sidebar in VS Code. Each chat or terminal can use a different local folder. Selecting a session also switches the file explorer to its folder.
 
@@ -41,7 +41,7 @@ Use VS Code 1.145 or later and open a trusted local workspace. Search for `Mauri
 3. Select a session to return to it and browse its files. Double-click a Markdown file to open it in a floating editor.
 4. In Codex or Ollama chats, use the clock icon to jump to a message. To restore a closed chat, run **Multiple AI Agent Chats: Reopen closed chat**.
 
-Use the formatting toolbar above the conversation to add emphasis, lists, code, links, or tables. The formatting button below the draft shows or hides the toolbar. Paste text or PNG, JPEG, and WebP images directly into the message editor. Images appear as removable attachments and require a model that supports image input.
+Use the formatting toolbar below the message input to add emphasis, lists, code, links, or tables. The formatting button below the draft shows or hides the toolbar. Paste text or PNG, JPEG, and WebP images directly into the message editor. Images appear as removable attachments and require a model that supports image input.
 
 The extension interface is available in English and Spanish.
 

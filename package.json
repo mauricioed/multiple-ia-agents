@@ -2,7 +2,7 @@
     "name": "multiple-ia-agents",
     "displayName": "Multiple AI Agent Chats",
     "description": "%extension.description%",
-    "version": "0.1.22",
+    "version": "0.1.26",
     "publisher": "Mauricio",
     "icon": "media/icon.png",
     "engines": {
@@ -13,7 +13,13 @@
         "Chat",
         "Other"
     ],
-    "keywords": ["Claude", "Codex", "Ollama", "IA", "AI"],
+    "keywords": [
+        "Claude",
+        "Codex",
+        "Ollama",
+        "IA",
+        "AI"
+    ],
     "license": "MIT",
     "repository": {
         "type": "git",

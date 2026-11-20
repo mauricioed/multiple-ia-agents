@@ -234,6 +234,11 @@ function createComposerEditor(input, reportError) {
   menu.className = 'format-menu';
   options.append(toggle, menu);
   toolbar.append(options);
+  function sizeMenu() {
+    if (options.open) menu.style.maxHeight = `min(38vh, ${Math.max(48, toolbar.getBoundingClientRect().top - 8)}px)`;
+  }
+  options.addEventListener('toggle', sizeMenu);
+  window.addEventListener('resize', sizeMenu);
   toolbar.addEventListener('keydown', event => {
     if (event.key === 'Escape' && options.open) { options.open = false; toggle.focus(); }
   });
@@ -290,6 +295,19 @@ function createComposerEditor(input, reportError) {
   return {
     toolbar,
     closePopups() { options.open = false; linkPanel.hidden = true; },
-    insertText(text) { rememberSelection(); command('insertText', text); }
+    insertText(text) {
+      rememberSelection();
+      focusEditor();
+      if (!document.execCommand('insertText', false, text)) {
+        const current = document.getSelection();
+        const range = current.getRangeAt(0);
+        const node = document.createTextNode(text.replace(/\r\n?/g, '\n'));
+        range.deleteContents();
+        range.insertNode(node);
+        current.collapse(node, node.length);
+      }
+      rememberSelection();
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
   };
 }

@@ -1,3 +1,19 @@
+## 0.1.26
+
+- Restore plain-text paste when the chat editor's text insertion command fails.
+
+## 0.1.25
+
+- Move the formatting toolbar below the message input.
+
+## 0.1.24
+
+- Raise the formatting toolbar slightly and simplify its visibility toggle to an icon button.
+
+## 0.1.23
+
+- Place the formatting toolbar inside the composer, directly above the message input.
+
 ## 0.1.22
 
 - Move the formatting toolbar above the conversation. Add new icons and a button below the draft to show or hide it.

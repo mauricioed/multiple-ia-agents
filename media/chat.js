@@ -244,9 +244,9 @@ model.addEventListener('focus', loadModels); model.addEventListener('pointerdown
 model.addEventListener('change', () => rpc('model', { value: model.value }).catch(error));
 const send = button('↑', t('Enviar mensaje'), () => submit(), 'send');
 right.append(model, ollamaPicker, send); toolbar.append(left, right);
-composer.append(resizeHandle, attachmentList, input, toolbar); footer.append(approvals, notice, composer);
+composer.append(resizeHandle, attachmentList, input, editor.toolbar, toolbar); footer.append(approvals, notice, composer);
 const footnote = el('p', t('Enter envía · Mayús+Enter añade una línea'), 'footnote'); footer.append(footnote);
-root.replaceChildren(header, pathLabel, editor.toolbar, conversation, footer);
+root.replaceChildren(header, pathLabel, conversation, footer);
 function remember() { api.setState({ sessionId: state?.session.id || previous.sessionId, draftHtml: input.innerHTML, attachments, composerHeight, formatVisible }); }
 input.addEventListener('input', remember);
 input.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit().catch(error); } });

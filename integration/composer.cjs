@@ -40,7 +40,12 @@ async function testComposer(browser, project, language, provider) {
     const formatting = page.getByRole('group', { name: spanish ? 'Formato del mensaje' : 'Message formatting' });
     const toggle = page.locator('footer .format-toggle');
     assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
-    assert.ok((await formatting.boundingBox()).y < (await page.locator('.conversation').boundingBox()).y);
+    assert.equal(await page.locator('.composer > .format-toolbar').count(), 1);
+    const editorBounds = await editor.boundingBox();
+    const formatBounds = await formatting.boundingBox();
+    assert.ok(formatBounds.y >= editorBounds.y + editorBounds.height);
+    assert.ok(formatBounds.y + formatBounds.height <= (await page.locator('.composer-toolbar').boundingBox()).y);
+    assert.equal(await toggle.locator('svg').count(), 1);
     assert.ok(await formatting.locator('button svg').count() >= 10);
     await toggle.click();
     assert.equal(await formatting.isVisible(), false);
@@ -50,6 +55,20 @@ async function testComposer(browser, project, language, provider) {
     assert.equal(await formatting.isVisible(), true);
     assert.equal(await page.evaluate(() => window.savedDraft.formatVisible), true);
     await editor.focus();
+    await page.keyboard.press('Control+a');
+    await editor.evaluate(node => {
+      const data = new DataTransfer();
+      data.setData('text/plain', 'Plain <text>\r\nSecond line');
+      const execCommand = document.execCommand;
+      document.execCommand = () => false;
+      try {
+        node.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+      } finally {
+        document.execCommand = execCommand;
+      }
+    });
+    assert.equal(await editor.textContent(), 'Plain <text>\nSecond line');
+    assert.equal(await page.evaluate(() => window.savedDraft.draftHtml), 'Plain &lt;text&gt;\nSecond line');
     await page.keyboard.press('Control+a');
     await editor.evaluate(async node => {
       const data = new DataTransfer();
@@ -75,7 +94,7 @@ async function testComposer(browser, project, language, provider) {
 
     const more = page.getByLabel(spanish ? 'Más opciones de formato' : 'More formatting options');
     await more.click();
-    assert.ok((await page.locator('.format-menu').boundingBox()).y >= (await formatting.boundingBox()).y);
+    assert.ok((await page.locator('.format-menu').boundingBox()).y < (await formatting.boundingBox()).y);
     await page.getByRole('button', { name: spanish ? 'Insertar tabla' : 'Insert table', exact: true }).click();
     assert.equal(await editor.locator('table tr').count(), 2);
     await editor.locator('td').first().click();

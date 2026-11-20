@@ -18,7 +18,7 @@ async function testComposer(browser, project, language, provider) {
       window.sent = [];
       window.acquireVsCodeApi = () => ({
         getState: () => ({ draft: 'Saved draft' }),
-        setState() {},
+        setState(state) { window.savedDraft = state; },
         postMessage(message) {
           window.sent.push(message);
           if (message.requestId) window.dispatchEvent(new MessageEvent('message', {
@@ -37,6 +37,18 @@ async function testComposer(browser, project, language, provider) {
     const spanish = language === 'es';
     const editor = page.getByRole('textbox', { name: spanish ? 'Mensaje para el agente' : 'Message for the agent' });
     assert.equal(await editor.textContent(), 'Saved draft');
+    const formatting = page.getByRole('group', { name: spanish ? 'Formato del mensaje' : 'Message formatting' });
+    const toggle = page.locator('footer .format-toggle');
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+    assert.ok((await formatting.boundingBox()).y < (await page.locator('.conversation').boundingBox()).y);
+    assert.ok(await formatting.locator('button svg').count() >= 10);
+    await toggle.click();
+    assert.equal(await formatting.isVisible(), false);
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(await page.evaluate(() => window.savedDraft.formatVisible), false);
+    await toggle.click();
+    assert.equal(await formatting.isVisible(), true);
+    assert.equal(await page.evaluate(() => window.savedDraft.formatVisible), true);
     await editor.focus();
     await page.keyboard.press('Control+a');
     await editor.evaluate(async node => {
@@ -63,6 +75,7 @@ async function testComposer(browser, project, language, provider) {
 
     const more = page.getByLabel(spanish ? 'Más opciones de formato' : 'More formatting options');
     await more.click();
+    assert.ok((await page.locator('.format-menu').boundingBox()).y >= (await formatting.boundingBox()).y);
     await page.getByRole('button', { name: spanish ? 'Insertar tabla' : 'Insert table', exact: true }).click();
     assert.equal(await editor.locator('table tr').count(), 2);
     await editor.locator('td').first().click();

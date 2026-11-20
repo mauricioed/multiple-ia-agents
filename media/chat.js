@@ -149,11 +149,25 @@ resizeHandle.addEventListener('keydown', event => {
 });
 const toolbar = el('div', undefined, 'composer-toolbar');
 const left = el('div', undefined, 'toolbar-left');
+editor.toolbar.id = 'chat-format-toolbar';
+let formatVisible = previous.formatVisible !== false;
+const formatToggle = button('', '', () => { setFormatVisible(!formatVisible); remember(); }, 'format-toggle');
+formatToggle.replaceChildren(chatIcon('formatting'));
+formatToggle.setAttribute('aria-controls', editor.toolbar.id);
+function setFormatVisible(visible) {
+  formatVisible = visible;
+  editor.toolbar.hidden = !visible;
+  if (!visible) editor.closePopups();
+  formatToggle.title = t(visible ? 'Ocultar barra de edición' : 'Mostrar barra de edición');
+  formatToggle.setAttribute('aria-label', formatToggle.title);
+  formatToggle.setAttribute('aria-expanded', String(visible));
+}
+setFormatVisible(formatVisible);
 left.append(button('＋', t('Adjuntar texto e imágenes de la carpeta'), async () => {
   const chosen = await rpc('attach', { attachments });
   for (const segments of chosen || []) if (!attachments.some(a => JSON.stringify(a) === JSON.stringify(segments))) attachments.push(segments);
   renderAttachments(); remember();
-}, 'attach'));
+}, 'attach'), formatToggle);
 const downloadModel = button(t('Descargar modelo'), t('Descargar modelo de Ollama'), async () => {
   downloadModel.disabled = true;
   try { if (await rpc('pullModel')) { loadedModels = false; await loadModels(); } }
@@ -230,10 +244,10 @@ model.addEventListener('focus', loadModels); model.addEventListener('pointerdown
 model.addEventListener('change', () => rpc('model', { value: model.value }).catch(error));
 const send = button('↑', t('Enviar mensaje'), () => submit(), 'send');
 right.append(model, ollamaPicker, send); toolbar.append(left, right);
-composer.append(resizeHandle, attachmentList, input, editor.toolbar, toolbar); footer.append(approvals, notice, composer);
+composer.append(resizeHandle, attachmentList, input, toolbar); footer.append(approvals, notice, composer);
 const footnote = el('p', t('Enter envía · Mayús+Enter añade una línea'), 'footnote'); footer.append(footnote);
-root.replaceChildren(header, pathLabel, conversation, footer);
-function remember() { api.setState({ sessionId: state?.session.id || previous.sessionId, draftHtml: input.innerHTML, attachments, composerHeight }); }
+root.replaceChildren(header, pathLabel, editor.toolbar, conversation, footer);
+function remember() { api.setState({ sessionId: state?.session.id || previous.sessionId, draftHtml: input.innerHTML, attachments, composerHeight, formatVisible }); }
 input.addEventListener('input', remember);
 input.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit().catch(error); } });
 input.addEventListener('dragover', event => event.preventDefault());

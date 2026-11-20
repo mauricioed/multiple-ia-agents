@@ -1,6 +1,8 @@
 'use strict';
 (function(root){
 const en={
+    "Mostrar barra de edición": "Show formatting toolbar",
+    "Ocultar barra de edición": "Hide formatting toolbar",
   "Revisa los archivos adjuntos.": "Review the attachments.",
   "Formato del mensaje": "Message formatting",
   "Negrita": "Bold",

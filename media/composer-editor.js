@@ -131,7 +131,7 @@ function createComposerEditor(input, reportError) {
     button.type = 'button';
     button.title = composerT(label);
     button.setAttribute('aria-label', button.title);
-    button.textContent = icon;
+    if (icon) button.append(chatIcon(icon)); else button.textContent = button.title;
     button.addEventListener('mousedown', event => {
       if (document.activeElement === input) rememberSelection();
       event.preventDefault();
@@ -142,19 +142,30 @@ function createComposerEditor(input, reportError) {
   }
 
   for (const [label, icon, action] of [
-    ['Negrita', 'B', 'bold'], ['Cursiva', '𝑰', 'italic'], ['Subrayado', 'U̲', 'underline'],
-    ['Tachado', 'S̶', 'strikeThrough'], ['Lista con viñetas', '•≡', 'insertUnorderedList'],
-    ['Lista numerada', '1≡', 'insertOrderedList']
-  ]) control(toolbar, label, icon, () => command(action));
+    ['Negrita', 'bold', 'bold'], ['Cursiva', 'italic', 'italic'], ['Subrayado', 'underline', 'underline'],
+    ['Tachado', 'strike', 'strikeThrough'], ['Lista con viñetas', 'bullets', 'insertUnorderedList'],
+    ['Lista numerada', 'numbers', 'insertOrderedList']
+  ]) {
+    const button = control(toolbar, label, icon, () => command(action));
+    if (['bullets', 'numbers'].includes(icon)) button.classList.add('format-list');
+  }
 
-  for (const [label, action, color] of [['Resaltado', 'backColor', '#ffdf71'], ['Color de texto', 'foreColor', '#427fd2']]) {
+  function iconField(icon, field) {
+    const wrapper = document.createElement('span');
+    wrapper.className = 'format-field';
+    wrapper.append(chatIcon(icon), field);
+    toolbar.append(wrapper);
+    return wrapper;
+  }
+
+  for (const [label, icon, action, color] of [['Resaltado', 'highlight', 'backColor', '#ffdf71'], ['Color de texto', 'textColor', 'foreColor', '#427fd2']]) {
     const picker = document.createElement('input');
     picker.type = 'color';
     picker.value = color;
     picker.title = composerT(label);
     picker.setAttribute('aria-label', picker.title);
     picker.addEventListener('change', () => command(action, picker.value));
-    toolbar.append(picker);
+    iconField(icon, picker);
   }
 
   const size = document.createElement('select');
@@ -168,8 +179,8 @@ function createComposerEditor(input, reportError) {
   }
   size.value = '3';
   size.addEventListener('change', () => command('fontSize', size.value));
-  toolbar.append(size);
-  control(toolbar, 'Cita', '❝', () => command('formatBlock', 'blockquote'));
+  iconField('textSize', size);
+  control(toolbar, 'Cita', 'quote', () => command('formatBlock', 'blockquote'));
 
   const linkPanel = document.createElement('div');
   linkPanel.className = 'format-link';
@@ -178,7 +189,7 @@ function createComposerEditor(input, reportError) {
   linkField.type = 'url';
   linkField.placeholder = 'https://';
   linkField.setAttribute('aria-label', composerT('Dirección del enlace'));
-  const linkToggle = control(toolbar, 'Insertar enlace', '↗', () => {
+  const linkToggle = control(toolbar, 'Insertar enlace', 'link', () => {
     linkPanel.hidden = !linkPanel.hidden;
     if (!linkPanel.hidden) linkField.focus();
   });
@@ -196,14 +207,14 @@ function createComposerEditor(input, reportError) {
     linkField.value = '';
   }
   linkPanel.append(linkField);
-  control(linkPanel, 'Aplicar enlace', '✓', addLink);
+  control(linkPanel, 'Aplicar enlace', 'check', addLink);
   linkField.addEventListener('keydown', event => {
     if (event.key === 'Enter') { event.preventDefault(); addLink(); }
     if (event.key === 'Escape') { linkPanel.hidden = true; linkToggle.focus(); }
   });
 
   const code = () => command('formatBlock', 'pre');
-  const codeButton = control(toolbar, 'Bloque de código', '</>', code);
+  const codeButton = control(toolbar, 'Bloque de código', 'code', code);
   codeButton.setAttribute('aria-keyshortcuts', 'Control+Shift+C Meta+Shift+C');
   input.addEventListener('keydown', event => {
     if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'c') {
@@ -218,7 +229,7 @@ function createComposerEditor(input, reportError) {
   const toggle = document.createElement('summary');
   toggle.title = composerT('Más opciones de formato');
   toggle.setAttribute('aria-label', toggle.title);
-  toggle.textContent = '⋯';
+  toggle.append(chatIcon('more'));
   const menu = document.createElement('div');
   menu.className = 'format-menu';
   options.append(toggle, menu);
@@ -268,13 +279,17 @@ function createComposerEditor(input, reportError) {
   for (const group of groups) {
     const section = document.createElement('div');
     menu.append(section);
-    for (const [label, action] of group) control(section, label, composerT(label), () => { options.open = false; action(); });
+    for (const [label, action] of group) control(section, label, null, () => { options.open = false; action(); });
   }
-  control(toolbar, 'Vaciar borrador', '⌫', () => {
+  control(toolbar, 'Vaciar borrador', 'trash', () => {
     focusEditor();
     selection.selectNodeContents(input);
     command('delete');
   }).classList.add('format-clear');
   toolbar.append(linkPanel);
-  return { toolbar, insertText: text => { rememberSelection(); command('insertText', text); } };
+  return {
+    toolbar,
+    closePopups() { options.open = false; linkPanel.hidden = true; },
+    insertText(text) { rememberSelection(); command('insertText', text); }
+  };
 }

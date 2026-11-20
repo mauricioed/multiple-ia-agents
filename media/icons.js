@@ -3,6 +3,21 @@
 let chatGradientSequence = 0;
 function chatIcon(name) {
   const paths = {
+    bold: 'M5 13V3h4a2.5 2.5 0 0 1 0 5H5m4 0a2.5 2.5 0 0 1 0 5H5',
+    italic: 'M7 3h6M3 13h6M10 3 6 13',
+    underline: 'M4 3v5a4 4 0 0 0 8 0V3M3 14h10',
+    strike: 'M12 5a4 3 0 0 0-8 0m0 6a4 3 0 0 0 8 0M2 8h12',
+    bullets: 'M5 4h9M5 8h9M5 12h9M2 4h.3M2 8h.3M2 12h.3',
+    numbers: 'M6 4h8M6 8h8M6 12h8M2 3l1-1v4M2 8a1 1 0 0 1 2 0l-2 2h2M2 12h2l-1 1h1v2H2',
+    highlight: 'M3 2v5l2 2v3l6-3 2-3V2M3 6h10M5 12l-2 2',
+    textColor: 'm4 10 4-8 4 8M6 7h4M2 12h12v2H2z',
+    textSize: 'm1 12 3-6 3 6m-5-2h4m1 2 4-9 4 9m-6-3h4',
+    quote: 'M3 8V4h4v4c0 3-2 4-3 4m6-4V4h4v4c0 3-2 4-3 4',
+    link: 'M6 11H5a3 3 0 0 1 0-6h2m3 0h1a3 3 0 0 1 0 6H9M5 8h6',
+    code: 'M2 2h12v12H2zM6.5 6 5 8l1.5 2m3-4L11 8l-1.5 2',
+    more: 'M3 8h.3m4.5 0h.3m4.5 0h.3',
+    trash: 'M2 4h12M6 4V2h4v2M4 4l1 10h6l1-10M7 6v5m2-5v5',
+    formatting: 'M2 2h12v12H2zM2 6h12m-9 5 1.5-3L8 11m1-2h3m-3 2h3',
     model: 'M4 4h8v8H4ZM6 6h4v4H6ZM6 1v3M10 1v3M6 12v3M10 12v3M1 6h3M1 10h3M12 6h3M12 10h3',
     download: 'M8 1v9m-3-3 3 3 3-3M2 10v4h12v-4',
     expandAll: 'M5 2h9v9M2 5h9v9H2ZM4 9.5h5M6.5 7v5',
@@ -28,6 +43,8 @@ function chatIcon(name) {
   path.setAttribute('d', paths[name === 'chatGradient' ? 'chat' : name] || paths.brand);
   path.setAttribute('fill', ['stop', 'welcome'].includes(name) ? 'currentColor' : 'none');
   path.setAttribute('stroke', 'currentColor'); path.setAttribute('stroke-width', name === 'brand' ? '1.6' : '1.2');
+  if (name === 'bold' || name === 'more') path.setAttribute('stroke-width', '1.8');
+  if (['more', 'bullets', 'link', 'italic'].includes(name)) path.setAttribute('stroke-linecap', 'round');
   if (name === 'chatGradient') {
     const defs = document.createElementNS(svg.namespaceURI, 'defs');
     const gradient = document.createElementNS(svg.namespaceURI, 'linearGradient');

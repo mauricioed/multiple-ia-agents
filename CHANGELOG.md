@@ -1,3 +1,7 @@
+## 0.1.22
+
+- Move the formatting toolbar above the conversation. Add new icons and a button below the draft to show or hide it.
+
 ## 0.1.21
 
 - Add a rich message editor and support pasting text and images into custom chats.

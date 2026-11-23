@@ -9,6 +9,7 @@ const fake = { workspace: { isTrusted: true }, window: { terminals: [] } };
 const load = Module._load;
 Module._load = function(name, ...args) { return name === 'vscode' ? fake : load.call(this, name, ...args); };
 const { ChatSessions } = require('../src/chat-sessions');
+const { Sidebar } = require('../src/sidebar');
 Module._load = load;
 async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gui-chats-'));
@@ -309,6 +310,32 @@ test('cold chat startup handles an immediate ready message and publishes initial
   const panel = await f.manager.showTerminal(f.session);
   assert.equal(f.manager.panels.get(f.session.id), panel);
   assert.ok(panel.sent.some(message => message.type === 'chat' && message.session.id === f.session.id));
+});
+
+test('sidebar reopens a closed chat with its saved transcript after reload', async t => {
+  const f = await fixture(t);
+  f.manager.getBackend = () => ({ run: async () => {
+    f.manager.onAgentEvent(f.session, { type: 'answer', id: 'reply', text: 'Saved reply' });
+  } });
+  await f.manager.send(f.session, 'Saved question');
+  await f.manager.closeSession(f.session.id);
+
+  const restored = new ChatSessions(f.context);
+  fakeChatPanels(t, restored);
+  const sidebar = new Sidebar(restored);
+  const messages = [];
+  sidebar.view = { webview: { postMessage: message => messages.push(message) } };
+  sidebar.publish();
+  assert.equal(messages[0].sessions.find(session => session.id === f.session.id)?.closed, true);
+
+  await sidebar.handle({ action: 'select', sessionId: f.session.id, requestId: 1 });
+  assert.equal(messages.at(-1).error, undefined);
+  assert.equal(restored.activeId, f.session.id);
+  assert.equal(restored.session(f.session.id).closed, undefined);
+  const panel = restored.panels.get(f.session.id);
+  const transcript = panel.sent.filter(message => message.type === 'chat').at(-1);
+  assert.deepEqual(transcript.messages.map(message => message.text), ['Saved question', 'Saved reply']);
+  assert.equal(restored.session(f.session.id).backendId, 'saved-thread');
 });
 
 test('restored chat reattaches scripts and state by session ID and supports old tabs by unique title', async t => {

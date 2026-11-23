@@ -1,3 +1,7 @@
+## 0.1.27
+
+- Keep closed custom chats visible so reopening restores the saved conversation.
+
 ## 0.1.26
 
 - Restore plain-text paste when the chat editor's text insertion command fails.

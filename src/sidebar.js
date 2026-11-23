@@ -17,7 +17,7 @@ class Sidebar {
   publish() {
     const active = this.manager.sessions.find(s => s.id === this.manager.activeId && !s.closed);
     this.view?.webview.postMessage({ type: 'sidebar', activeId: active?.id, activeRoot: active?.root, activeName: active?.name,
-      revision: this.revision || 0, sessions: this.manager.sessions.filter(s => !s.closed).map(s => ({ id: s.id, name: s.name, root: s.root, mode: s.mode, running: this.manager.running.has(s.id) })) });
+      revision: this.revision || 0, sessions: this.manager.sessions.filter(s => !s.closed || (s.mode !== 'terminal' && ['codex', 'ollama'].includes(s.provider))).map(s => ({ closed: s.closed, id: s.id, name: s.name, root: s.root, mode: s.mode, running: this.manager.running.has(s.id) })) });
   }
   refreshFiles() { this.revision = (this.revision || 0) + 1; this.publish(); }
   async handle(message) {

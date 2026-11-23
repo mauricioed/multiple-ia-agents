@@ -48,10 +48,13 @@ function renderChats(state) {
     if (selected) button.setAttribute('aria-current', 'true');
     button.append(chatIcon(session.mode === 'terminal' ? 'terminal' : 'chat'), sidebarElement('span', session.name, 'chat-name'));
     if (selected) button.append(sidebarElement('small', sidebarT('Activo'), 'chat-status'));
+    else if (session.closed) button.append(sidebarElement('small', sidebarT('cerrado'), 'chat-status'));
     button.addEventListener('click', () => sidebarRequest('select', {sessionId: session.id}).catch(sidebarError));
+    row.append(button); chatsNode.append(row);
+    if (session.closed) continue;
     const close = sidebarElement('button', undefined, 'chat-close'); close.type = 'button'; close.title = sidebarT('Cerrar sesión'); close.setAttribute('aria-label', sidebarT('Cerrar sesión') + ': ' + session.name); close.append(chatIcon('close'));
     close.addEventListener('click', () => sidebarRequest('close', {sessionId: session.id}).catch(sidebarError));
-    row.append(button, close); chatsNode.append(row);
+    row.append(close);
   }
   if (!state.sessions.length) chatsNode.append(sidebarElement('p', sidebarT('Selecciona o crea un chat para explorar sus archivos.'), 'empty'));
   if (focusedId) [...chatsNode.querySelectorAll('[data-chat-id]')].find(node => node.dataset.chatId === focusedId)?.focus();

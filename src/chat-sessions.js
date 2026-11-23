@@ -477,11 +477,18 @@ class ChatSessions extends TerminalSessions {
     if (this.activeId === id) this.activeId = this.sessions.find(s => !s.closed)?.id;
     await this.persist(); return true;
   }
+  async selectSession(id, focus = true) {
+    const session = this.session(id);
+    if (!session.closed || !focus) return super.selectSession(id, focus);
+    if (!await this.showTerminal(session)) return;
+    delete session.closed;
+    this.activeId = id;
+    await this.persist();
+  }
   async reopenSession() {
     const selected = await vscode.window.showQuickPick(this.sessions.filter(s => s.closed).map(s => ({ label: s.name, description: s.root, id: s.id })), { title: t('Reabrir conversación conservada') });
     if (!selected) return;
-    const session = this.session(selected.id); delete session.closed;
-    await this.selectSession(session.id);
+    await this.selectSession(selected.id);
   }
   async restartSession(id) {
     const session = this.session(id);

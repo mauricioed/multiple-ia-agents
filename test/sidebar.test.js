@@ -17,10 +17,10 @@ test('compact sidebar follows the active chat and contains only chats and files 
     fileTree:{getChildren:async()=>[{name:'doc.md',uri:{},segments:['doc.md']}],open:async(entry,preview)=>opened.push([entry,preview])},
     selectSession:async id=>{manager.activeId=id;} };
   const view = new Sidebar(manager); view.view={webview:{postMessage:message=>messages.push(message)}};
-  view.publish(); assert.equal(messages[0].activeName,'Custom title');
+  await view.publish(); assert.equal(messages[0].activeName,'Custom title');
   await view.handle({action:'list',requestId:1}); assert.equal(messages.at(-1).result[0].uri,undefined);
   await view.handle({action:'open',requestId:2,entry:{name:'doc.md'},preview:true}); assert.deepEqual(opened,[[{name:'doc.md'},true]]);
-  view.refreshFiles(); assert.equal(messages.at(-1).revision,1);
+  await view.refreshFiles(); assert.equal(messages.at(-1).revision,1);
 });
 test('compact explorer reuses file theme icons for concurrent requests and rejects paths outside the extension', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(),'sidebar-icons-')); t.after(()=>fs.rm(root,{recursive:true,force:true}));

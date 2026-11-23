@@ -43,9 +43,9 @@ function restoreSessions(value) {
     if (!s || typeof s.id !== 'string' || seen.has(s.id) || typeof s.name !== 'string' || typeof s.root !== 'string' || !path.isAbsolute(s.root) || !['vscode', 'codex', 'claude', 'ollama', 'terminal'].includes(s.provider)) return false;
     seen.add(s.id);
     return true;
-  }).map(({ id, name, root, provider, nativeAgent, closed, model, needsAgentSelection, mode }) => ({ id, name, root,
+  }).map(({ id, name, root, provider, nativeAgent, closed, closedAt, model, needsAgentSelection, mode }) => ({ id, name, root,
     provider: provider === 'vscode' ? ['codex', 'claude', 'ollama'].includes(nativeAgent) ? nativeAgent : 'terminal' : provider,
-    ...(closed === true ? { closed: true } : {}),
+    ...(closed === true ? { closed: true, ...(Number.isFinite(closedAt) ? { closedAt } : {}) } : {}),
     ...(mode === 'terminal' || provider === 'terminal' ? { mode: 'terminal' } : {}),
     ...(typeof model === 'string' && model && !/[\x00\r\n]/u.test(model) && !model.startsWith('-') ? { model } : {}),
     ...(needsAgentSelection === true || provider === 'vscode' && !['codex', 'claude', 'ollama'].includes(nativeAgent) ? { needsAgentSelection: true } : {}) }));

@@ -10,12 +10,13 @@ const load = Module._load;
 Module._load = function(name, ...args) { return name === 'vscode' ? fake : load.call(this, name, ...args); };
 const { ChatSessions } = require('../src/chat-sessions');
 const { Sidebar } = require('../src/sidebar');
+const { GitHubVault } = require('../src/github-vault');
 Module._load = load;
 async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gui-chats-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const data = { sessions: [{ id: 'first', name: 'First', root, provider: 'codex', backendId: 'saved-thread', permission: 'read' }, { id: 'second', name: 'Second', root, provider: 'claude' }] };
-  const context = { globalStorageUri: { fsPath: path.join(root, 'history') }, globalState: { get: key => data[key], update: async (key, value) => { data[key] = structuredClone(value); } } };
+  const context = { globalStorageUri: { fsPath: path.join(root, 'history') }, globalState: { get: (key, fallback) => data[key] ?? fallback, update: async (key, value) => { data[key] = structuredClone(value); } } };
   const manager = new ChatSessions(context); return { root, context, manager, session: manager.session('first') };
 }
 test('restores provider thread and permissions and saves history across manager reload', async t => {
@@ -90,6 +91,38 @@ test('concurrent chats remain independent; duplicate send is rejected', async t 
   assert.equal((await f.manager.history(f.session)).at(-1).text, 'First');
   assert.equal((await f.manager.history(second)).at(-1).text, 'Second');
 });
+test('chat submissions finish the current turn and send queued messages in order', async t => {
+  const f = await fixture(t);
+  let started;
+  let finish;
+  const firstStarted = new Promise(resolve => { started = resolve; });
+  const firstWaiting = new Promise(resolve => { finish = resolve; });
+  const prompts = [];
+  const states = [];
+  f.manager.panels.set(f.session.id, { webview: { postMessage: message => states.push(message) } });
+  f.manager.getBackend = () => ({
+    run: async text => {
+      prompts.push(text);
+      if (text === 'One') { started(); await firstWaiting; }
+      f.manager.onAgentEvent(f.session, { type: 'answer', id: 'answer', text: 'Reply ' + text });
+    },
+    stop: () => assert.fail('Queueing must not stop the active turn')
+  });
+  const first = f.manager.submitMessage(f.session, { text: 'One' });
+  await firstStarted;
+  const second = f.manager.submitMessage(f.session, { text: 'Two' });
+  const third = f.manager.submitMessage(f.session, { text: 'Three' });
+  assert.deepEqual(prompts, ['One']);
+  assert.equal(states.at(-1).queued, 2);
+  assert.equal(f.manager.running.get(f.session.id).controller.signal.aborted, false);
+  finish();
+  await Promise.all([first, second, third]);
+  assert.deepEqual(prompts, ['One', 'Two', 'Three']);
+  assert.deepEqual((await f.manager.history(f.session)).map(entry => entry.text),
+    ['One', 'Reply One', 'Two', 'Reply Two', 'Three', 'Reply Three']);
+  assert.equal(states.at(-1).queued, 0);
+});
+
 test('permissions are scoped to session and outstanding approvals are rejected on stop', async t => {
   const f = await fixture(t); const controller = new AbortController();
   f.manager.running.set('first', { controller });
@@ -237,7 +270,11 @@ test('explicit new chat provider overrides active agent and invalid providers do
   const f = await fixture(t);
   f.manager.activeId = 'first';
   f.manager.pickFolder = async () => f.root;
-  f.manager.showTerminal = async () => {};
+  f.manager.showTerminal = async () => false;
+  await f.manager.createSession('claude');
+  assert.equal(f.manager.activeId, 'first');
+  assert.equal(f.manager.sessions.length, 2);
+  f.manager.showTerminal = async () => true;
   await f.manager.createSession('claude');
   assert.equal(f.manager.session(f.manager.activeId).provider, 'claude');
   f.manager.pickFolder = async () => assert.fail('Invalid provider must not open the folder picker');
@@ -291,14 +328,14 @@ function fakeChatPanels(t, manager) {
   const oldUri = fake.Uri; const oldColumns = fake.ViewColumn; const oldCreate = fake.window.createWebviewPanel;
   fake.Uri = { joinPath: (_base, ...segments) => segments.join('/') };
   fake.ViewColumn = { Active: 1, Beside: 2 };
-  manager.context.extensionUri = 'extension'; manager.chatHtml = () => '<html>Chat</html>';
+  manager.context.extensionUri = 'extension';
   t.after(() => { fake.Uri = oldUri; fake.ViewColumn = oldColumns; fake.window.createWebviewPanel = oldCreate; });
   const make = title => {
     let listener; const sent = [];
-    const panel = { title, active: false, viewColumn: 1, disposed: false, reveal() {}, dispose() { this.disposed = true; }, onDidChangeViewState() {}, onDidDispose() {}, webview: {
-      onDidReceiveMessage(callback) { listener = callback; }, postMessage(message) { sent.push(message); }
+    const panel = { title, active: false, viewColumn: 1, disposed: false, reveal() {}, dispose() { this.disposed = true; }, onDidChangeViewState() { return { dispose() {} }; }, onDidDispose() { return { dispose() {} }; }, webview: {
+      asWebviewUri(uri) { return uri; }, onDidReceiveMessage(callback) { listener = callback; return { dispose() { listener = undefined; } }; }, postMessage(message) { sent.push(message); }
     } };
-    Object.defineProperty(panel.webview, 'html', { set() { assert.ok(listener, 'the listener must be registered before HTML can send ready'); listener({ action: 'ready' }); } });
+    Object.defineProperty(panel.webview, 'html', { set(html) { panel.html = html; assert.ok(listener, 'the listener must be registered before HTML can send ready'); listener({ action: 'ready' }); } });
     panel.sent = sent; return panel;
   };
   fake.window.createWebviewPanel = (_type, title) => make(title);
@@ -312,11 +349,27 @@ test('cold chat startup handles an immediate ready message and publishes initial
   assert.ok(panel.sent.some(message => message.type === 'chat' && message.session.id === f.session.id));
 });
 
-test('sidebar reopens a closed chat with its saved transcript after reload', async t => {
+test('closed chat previews sort by the last non-empty user message, regardless of closure order', async t => {
+  const { manager, root, session } = await fixture(t);
+  const older = { ...session, id: 'older', closed: true, closedAt: 100 };
+  const newer = { ...session, id: 'newer', closed: true, closedAt: 90 };
+  manager.sessions = [older, newer];
+  manager.history = async chat => chat === older
+    ? [{ role: 'user', text: 'Older', created: 10 },
+       { role: 'assistant', text: 'Later reply', created: 60 },
+       { role: 'user', text: '  ', created: 70 }]
+    : [{ role: 'user', text: 'Newer', created: 20 }];
+
+  const items = await manager.closedChatItems(root);
+  assert.deepEqual(items.map(item => [item.detail, item.created]), [['Newer', 20], ['Older', 10]]);
+});
+
+test('closed chats stay off the sidebar and reopen with their saved history', async t => {
   const f = await fixture(t);
   f.manager.getBackend = () => ({ run: async () => {
     f.manager.onAgentEvent(f.session, { type: 'answer', id: 'reply', text: 'Saved reply' });
   } });
+  await f.manager.send(f.session, 'Earlier question');
   await f.manager.send(f.session, 'Saved question');
   await f.manager.closeSession(f.session.id);
 
@@ -325,16 +378,41 @@ test('sidebar reopens a closed chat with its saved transcript after reload', asy
   const sidebar = new Sidebar(restored);
   const messages = [];
   sidebar.view = { webview: { postMessage: message => messages.push(message) } };
-  sidebar.publish();
-  assert.equal(messages[0].sessions.find(session => session.id === f.session.id)?.closed, true);
+  await sidebar.publish();
+  assert.deepEqual(messages[0].sessions.map(session => session.id), ['second']);
 
-  await sidebar.handle({ action: 'select', sessionId: f.session.id, requestId: 1 });
-  assert.equal(messages.at(-1).error, undefined);
+  const foreign = { ...restored.session(f.session.id), id: 'foreign', root: path.join(f.root, 'another-folder') };
+  const empty = { ...foreign, id: 'empty', root: f.root };
+  restored.sessions.push(foreign, empty);
+  const source = restored.session('second');
+  source.provider = 'codex';
+  const openChat = await restored.showTerminal(source);
+  const createPanel = fake.window.createWebviewPanel;
+  fake.window.createWebviewPanel = () => assert.fail('reopening must reuse the current panel');
+  const replies = () => openChat.sent.filter(message => message.type === 'reply');
+  await restored.handleChat(source, openChat, { action: 'closedChatHistory', requestId: 1 });
+  assert.deepEqual(replies().at(-1).result.map(item => [item.id, item.detail]), [[f.session.id, 'Saved question']]);
+  await restored.handleChat(source, openChat, { action: 'reopenChat', id: foreign.id, requestId: 2 });
+  assert.ok(replies().at(-1).error);
+  assert.equal(foreign.closed, true);
+  await restored.handleChat(source, openChat, { action: 'reopenChat', id: f.session.id, requestId: 3 });
+  assert.equal(replies().at(-1).result, true);
+  assert.ok(restored.session(f.session.id).closedAt);
+  fake.window.createWebviewPanel = createPanel;
+  assert.equal(restored.panels.get(f.session.id), openChat);
+  assert.equal(openChat.disposed, false);
+  assert.equal(source.closed, true);
+
   assert.equal(restored.activeId, f.session.id);
   assert.equal(restored.session(f.session.id).closed, undefined);
+  await sidebar.publish();
+  const reopened = messages.filter(message => message.type === 'sidebar').at(-1);
+  assert.equal(reopened.activeId, f.session.id);
+  assert.ok(reopened.sessions.every(session => !('latestMessage' in session)));
+  assert.deepEqual(reopened.sessions.map(session => session.id), [f.session.id]);
   const panel = restored.panels.get(f.session.id);
   const transcript = panel.sent.filter(message => message.type === 'chat').at(-1);
-  assert.deepEqual(transcript.messages.map(message => message.text), ['Saved question', 'Saved reply']);
+  assert.deepEqual(transcript.messages.map(message => message.text), ['Earlier question', 'Saved reply', 'Saved question', 'Saved reply']);
   assert.equal(restored.session(f.session.id).backendId, 'saved-thread');
 });
 
@@ -346,6 +424,7 @@ test('restored chat reattaches scripts and state by session ID and supports old 
   assert.equal(f.manager.panels.get(f.session.id), panel);
   assert.equal(f.session.closed, undefined);
   assert.equal(panel.title, f.session.name);
+  assert.ok(panel.html.includes('data-session-id="' + f.session.id + '"'));
   assert.ok(panel.sent.some(message => message.type === 'chat' && message.session.id === f.session.id));
   const second = f.manager.session('second'); second.provider = 'codex'; const legacy = make(second.name);
   await f.manager.restoreChatPanel(legacy, undefined);
@@ -483,4 +562,129 @@ test('terminal submenu registers each provider independently of chat creation',(
   const pkg=require('../package.json');const menu=pkg.contributes.menus['multipleIAAgents.newTerminals'];
   assert.deepEqual(menu.map(item=>item.command),['codex','claude','ollama','terminal'].map(provider=>'multipleIAAgents.newTerminal.'+provider));
   assert.ok(pkg.contributes.menus['view/title'].some(item=>item.submenu==='multipleIAAgents.newTerminals'));
+});
+
+test('opens an existing Markdown vault and lists its nested documents independently of the chat folder', async t => {
+  const f = await fixture(t);
+  const root = path.join(f.root, 'existing-vault');
+  await fs.mkdir(path.join(root, 'notes'), { recursive: true });
+  await fs.mkdir(path.join(root, '.git'));
+  await fs.writeFile(path.join(root, 'README.md'), '# Vault');
+  await fs.writeFile(path.join(root, 'notes', 'Daily.MARKDOWN'), '# Daily');
+  await fs.writeFile(path.join(root, 'notes', 'other.txt'), 'Other');
+  const workspace = new Map();
+  f.context.workspaceState = { get: key => workspace.get(key), update: async (key, value) => workspace.set(key, value) };
+  const { showOpenDialog } = fake.window;
+  t.after(() => { fake.window.showOpenDialog = showOpenDialog; });
+  fake.window.showOpenDialog = async options => {
+    assert.equal(options.canSelectFolders, true);
+    return [{ scheme: 'file', fsPath: root }];
+  };
+  f.manager.vault = new GitHubVault(f.context);
+  const folder = await f.manager.vault.pickFolder();
+  assert.equal(folder.name, 'existing-vault');
+  await assert.rejects(f.manager.vault.run('open', folder, '...'));
+  assert.equal(await f.manager.vault.run('open', folder, folder.name), true);
+  assert.equal(f.manager.vault.active.name, 'existing-vault');
+  const sidebar = new Sidebar(f.manager);
+  const activeRoot = f.manager.vault.active.root;
+  const [vault] = await sidebar.vaultChildren(activeRoot);
+  const entries = await sidebar.vaultChildren(activeRoot, vault);
+  assert.deepEqual(entries.map(entry => entry.name), ['notes', 'README.md']);
+  const [document] = await sidebar.vaultChildren(activeRoot, entries[0], true);
+  const restoredVault = new GitHubVault(f.context);
+  assert.deepEqual(restoredVault.lastFolder, ['notes']);
+  const newWindowVault = new GitHubVault({ ...f.context, workspaceState: { get: () => undefined } });
+  assert.equal(newWindowVault.active.root, activeRoot);
+  assert.deepEqual(document.segments, ['notes', 'Daily.MARKDOWN']);
+  assert.equal(document.markdown, true);
+  assert.equal(await f.manager.vault.loadTemplate(document), '# Daily');
+  const makePanel = fakeChatPanels(t, f.manager);
+  const chatPanel = makePanel(f.session.name);
+  const post = chatPanel.webview.postMessage;
+  chatPanel.webview.postMessage = message => { post(message); return true; };
+  f.manager.activeId = f.session.id;
+  f.manager.attachChatPanel(f.session, chatPanel);
+  await f.manager.insertVaultDocument(f.session.id, document);
+  assert.deepEqual(chatPanel.sent.at(-1), { type: 'vaultTemplate', template: '# Daily' });
+  await assert.rejects(f.manager.insertVaultDocument('second', document));
+  const { Uri } = fake;
+  fake.Uri = { file: fsPath => ({ scheme: "file", fsPath }) };
+  t.after(() => { fake.Uri = Uri; });
+  const { showSaveDialog } = fake.window;
+  t.after(() => { fake.window.showSaveDialog = showSaveDialog; });
+  fake.window.showSaveDialog = async () => ({ scheme: 'file', fsPath: path.join(root, 'Export.md') });
+  assert.equal(await f.manager.vault.saveConversation(f.session, [{ role: 'user', text: 'Saved question' }]), true);
+  assert.match(await fs.readFile(path.join(root, 'Export.md'), 'utf8'), /Saved question/u);
+  const originalFs = fake.workspace.fs;
+  const originalWarning = fake.window.showWarningMessage;
+  t.after(() => { fake.workspace.fs = originalFs; fake.window.showWarningMessage = originalWarning; });
+  const trashed = [];
+  fake.workspace.fs = { delete: async (uri, options) => trashed.push([uri.fsPath, options]) };
+  fake.window.showWarningMessage = async () => undefined;
+  assert.equal(await sidebar.trashVaultFile(document), false);
+  assert.equal(trashed.length, 0);
+  fake.window.showWarningMessage = async (_message, _options, confirm) => confirm;
+  await assert.rejects(sidebar.trashVaultFile({ ...document, segments: ['notes'] }));
+  assert.equal(await sidebar.trashVaultFile(document), true);
+  assert.deepEqual(trashed, [[path.join(activeRoot, 'notes', 'Daily.MARKDOWN'), { recursive: false, useTrash: true }]]);
+  await fs.rename(path.join(root, 'notes'), path.join(root, 'renamed-outside-vscode'));
+  assert.deepEqual(await sidebar.vaultChildren(activeRoot, entries[0], true), []);
+  assert.deepEqual(restoredVault.lastFolder, ['notes']);
+  assert.ok((await sidebar.vaultChildren(activeRoot, vault)).some(entry => entry.name === 'renamed-outside-vscode'));
+  await assert.rejects(sidebar.vaultChildren(activeRoot, { segments: ['..'] }));
+
+  workspace.delete('githubVault.active');
+  workspace.set('githubVaultFolder', activeRoot);
+  assert.equal(new GitHubVault(f.context).active.root, activeRoot);
+  fake.window.showOpenDialog = async () => undefined;
+  assert.equal(await f.manager.vault.pickFolder(), false);
+  assert.equal(workspace.has('githubVault.active'), false);
+  assert.equal(await f.manager.vault.run('open', folder, 'Notas de sesión'), true);
+  assert.equal(f.manager.vault.active.name, 'Notas de sesión');
+  assert.equal(f.manager.vault.active.root, activeRoot);
+});
+
+test('sync derives a private repository name from the vault and rejects unverified visibility', async t => {
+  const f = await fixture(t);
+  const root = await fs.realpath(await fs.mkdtemp(path.join(f.root, 'vault-sync-')));
+  f.context.workspaceState = { get: key => key === 'githubVault.active' ? { name: 'Notas de sesión', root } : undefined };
+  const originalFetch = globalThis.fetch;
+  const originalAuthentication = fake.authentication;
+  t.after(() => { globalThis.fetch = originalFetch; fake.authentication = originalAuthentication; });
+  fake.authentication = { getSession: async () => ({ accessToken: 'mock-token' }) };
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push([url, options.method, JSON.parse(options.body)]);
+    return { ok: true, json: async () => ({ private: false, visibility: 'public' }) };
+  };
+  await assert.rejects(new GitHubVault(f.context).run('sync'), /privad|private/iu);
+  assert.deepEqual(requests, [['https://api.github.com/user/repos', 'POST', {
+    name: 'Notas-de-sesion', private: true, auto_init: false
+  }]]);
+});
+
+test('vault status reports a clean confirmed commit and local changes without contacting GitHub', async t => {
+  const f = await fixture(t);
+  const { execFileSync } = require('node:child_process');
+  const { createHash } = require('node:crypto');
+  const root = await fs.realpath(f.root);
+  const vault = new GitHubVault(f.context);
+  f.context.workspaceState = { get: key => key === 'githubVault.active' ? { root } : undefined };
+  const remote = 'https://github.com/example/vault.git';
+  const git = (...args) => execFileSync('git', ['-c', 'user.name=Vault Test', '-c', 'user.email=vault-test', ...args], { cwd: root, encoding: 'utf8' }).trim();
+  git('init', '--initial-branch=main');
+  git('remote', 'add', 'origin', remote);
+  await fs.writeFile(path.join(root, 'tracked.md'), '# Original');
+  git('add', 'tracked.md');
+  git('commit', '-m', 'Vault test');
+  assert.equal(await vault.syncStatus(root), 'unknown');
+  const key = 'githubVault.sync.' + createHash('sha256').update(root).digest('hex');
+  await f.context.globalState.update(key, { remote, branch: 'main', commit: git('rev-parse', 'HEAD') });
+  assert.equal(await vault.syncStatus(root), 'synced');
+  await fs.writeFile(path.join(root, 'tracked.md'), '# Edited');
+  assert.equal(await vault.syncStatus(root), 'pending');
+  await fs.writeFile(path.join(root, 'tracked.md'), '# Original');
+  await fs.writeFile(path.join(root, 'Export.MARKDOWN'), '# Conversation');
+  assert.equal(await vault.syncStatus(root), 'pending');
 });

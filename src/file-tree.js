@@ -105,7 +105,10 @@ class ChatFileTree {
     const session = this.manager.session(entry.sessionId);
     if (session.closed || session.root !== entry.rootPath) throw new Error(t('La carpeta del chat ha cambiado. Actualiza el explorador.'));
     const target = await core.resolveEntry(session.root, entry.segments);
-    if (markdown) return this.manager.openMarkdown(session, entry.segments);
+    return this.openPath(session, entry.segments, target, markdown);
+  }
+  async openPath(session, segments, target, markdown) {
+    if (markdown) return this.manager.openMarkdown(session, segments);
     if (/\.(docx?|docm|dotx?|dotm)$/iu.test(target)) {
       const opened = await vscode.env.openExternal(vscode.Uri.file(target));
       if (!opened) throw new Error(t('No se pudo abrir el documento Word. Asocia este tipo de archivo con Microsoft Word o LibreOffice en tu equipo.'));

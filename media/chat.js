@@ -2,9 +2,13 @@
 const t = ChatI18n.translator(document.documentElement.lang);
 const api = acquireVsCodeApi();
 const root = document.getElementById('app');
-let state; let sequence = 0; let loadedModels = false; let loadingModels = false; let submitting = false;
+let state; let sequence = 0; let loadedModels = false; let loadingModels = false;
 const pending = new Map();
-const previous = api.getState() || {};
+const sessionId = decodeURIComponent(root.dataset.sessionId);
+const saved = api.getState() || {};
+const drafts = saved.drafts || {};
+if (saved.sessionId && !saved.drafts) drafts[saved.sessionId] = saved;
+const previous = Object.hasOwn(drafts, sessionId) ? drafts[sessionId] : {};
 let attachments = Array.isArray(previous.attachments) ? previous.attachments : [];
 let pastedImages = [];
 let readingClipboard = false;
@@ -19,7 +23,7 @@ function rpc(action, data = {}) {
 function error(error) { notice.textContent = error.message || String(error); }
 function button(text, title, action, className) {
   const node = el('button', text, className); node.type = 'button'; node.title = title; node.setAttribute('aria-label', title);
-  const iconName = className === 'terminal-button' ? 'terminal' : className === 'send' ? 'send' : className === 'attach' ? 'add' : title.startsWith(t('Mostrar u ocultar')) ? 'history' : title.startsWith(t('Abrir terminal')) ? 'terminal' : title.startsWith(t('Nuevo chat')) ? 'add' : title.startsWith(t('Cerrar sesi')) ? 'close' : undefined;
+  const iconName = className === 'terminal-button' ? 'terminal' : className === 'attach' ? 'add' : title.startsWith(t('Mostrar u ocultar')) ? 'history' : title.startsWith(t('Abrir terminal')) ? 'terminal' : title.startsWith(t('Nuevo chat')) ? 'add' : title.startsWith(t('Cerrar sesi')) ? 'close' : undefined;
   if (iconName) node.replaceChildren(chatIcon(iconName));
   node.addEventListener('click', () => Promise.resolve().then(action).catch(error)); return node;
 }
@@ -84,19 +88,59 @@ window.addEventListener('blur', () => setAgentMenu(false, false));
 newChatControl.append(newChatButton, agentMenuToggle, agentMenu);
 controls.append(button('▣', t('Abrir terminal del agente'), () => rpc('terminal'), 'terminal-button'), newChatControl, button('×', t('Cerrar sesión'), () => rpc('close')));
 const chatHistory = el('div', undefined, 'chat-history');
-const historyEntries = el('nav', undefined, 'history-entries'); historyEntries.setAttribute('aria-label', t('Historial de mensajes'));
-historyEntries.id = 'chat-message-history'; historyEntries.hidden = true;
-const historyToggle = button('', t('Mostrar u ocultar historial del chat'), () => setHistory(historyEntries.hidden));
-historyToggle.setAttribute('aria-controls', historyEntries.id); historyToggle.setAttribute('aria-expanded', 'false');
-function setHistory(open, restoreFocus = false) {
-  historyEntries.hidden = !open; historyToggle.setAttribute('aria-expanded', String(open));
-  if (restoreFocus) historyToggle.focus();
+const historyPopup = el('nav', undefined, 'history-entries');
+historyPopup.id = 'closed-chat-history';
+historyPopup.hidden = true;
+historyPopup.setAttribute('aria-label', t('Reabrir chats cerrados'));
+let historyRequest = 0;
+const historyButton = button('', t('Reabrir chats cerrados'), async () => {
+  if (!historyPopup.hidden) { closeHistory(); return; }
+  const request = ++historyRequest;
+  historyPopup.hidden = false;
+  historyButton.setAttribute('aria-expanded', 'true');
+  historyPopup.replaceChildren(el('p', t('Cargando historial…')));
+  try {
+    const items = await rpc('closedChatHistory');
+    if (request !== historyRequest) return;
+    historyPopup.replaceChildren();
+    for (const item of items) {
+      const entry = button('', item.label, () => {
+        closeHistory(true);
+        return rpc('reopenChat', { id: item.id });
+      }, 'history-link');
+      entry.append(el('span', item.detail, 'history-preview'));
+      const timestamp = new Date(item.created);
+      if (Number.isFinite(timestamp.getTime())) {
+        const date = el('time', timestamp.toLocaleString(document.documentElement.lang, {
+          dateStyle: 'medium', timeStyle: 'short'
+        }), 'history-date');
+        date.dateTime = timestamp.toISOString();
+        entry.append(date);
+      }
+      historyPopup.append(entry);
+    }
+    if (!items.length) historyPopup.append(el('p', t('No hay chats cerrados para esta carpeta.')));
+  } catch (failure) {
+    if (request === historyRequest) historyPopup.replaceChildren(el('p', failure.message || String(failure)));
+  }
+});
+historyButton.append(chatIcon('history'));
+historyButton.setAttribute('aria-controls', historyPopup.id);
+historyButton.setAttribute('aria-expanded', 'false');
+function closeHistory(restoreFocus = false) {
+  historyRequest++;
+  historyPopup.hidden = true;
+  historyButton.setAttribute('aria-expanded', 'false');
+  if (restoreFocus) historyButton.focus();
 }
-chatHistory.append(historyToggle, historyEntries);
-document.addEventListener('pointerdown', event => { if (!chatHistory.contains(event.target)) setHistory(false); });
-chatHistory.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); setHistory(false, true); } });
-window.addEventListener('blur', () => setHistory(false));
+chatHistory.append(historyButton, historyPopup);
 controls.prepend(chatHistory);
+document.addEventListener('pointerdown', event => {
+  if (!historyPopup.hidden && !chatHistory.contains(event.target)) closeHistory();
+});
+chatHistory.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !historyPopup.hidden) { event.preventDefault(); closeHistory(true); }
+});
 header.append(brand, controls);
 const pathLabel = el('div', undefined, 'chat-path');
 const conversation = el('main', undefined, 'conversation'); conversation.setAttribute('aria-label', t('Mensajes'));
@@ -167,7 +211,7 @@ left.append(button('＋', t('Adjuntar texto e imágenes de la carpeta'), async (
   const chosen = await rpc('attach', { attachments });
   for (const segments of chosen || []) if (!attachments.some(a => JSON.stringify(a) === JSON.stringify(segments))) attachments.push(segments);
   renderAttachments(); remember();
-}, 'attach'), formatToggle);
+}, 'attach'));
 const downloadModel = button(t('Descargar modelo'), t('Descargar modelo de Ollama'), async () => {
   downloadModel.disabled = true;
   try { if (await rpc('pullModel')) { loadedModels = false; await loadModels(); } }
@@ -180,7 +224,126 @@ permission.className = 'permission-picker';
 permission.append(option(t('\u270b Solicitar aprobaci\u00f3n'), 'ask'), option(t('\uD83E\uDD16 Aprobar por m\u00ed'), 'auto'));
 permission.append(option(t('\uD83D\uDD13 Acceso completo'), 'full'), option(t('\u2699\uFE0F Personalizado'), 'custom'));
 permission.addEventListener('change', () => rpc('permission', { value: permission.value }).catch(error));
-left.append(permission);
+const vaultDialog = el('dialog', undefined, 'vault-dialog');
+vaultDialog.setAttribute('aria-labelledby', 'vault-dialog-title');
+const vaultLabel = 'GitHub Markdown Valut';
+const vault = button('', vaultLabel, () => {
+  showVaultOptions();
+  vaultDialog.showModal();
+  vault.setAttribute('aria-expanded', 'true');
+}, 'vault-toggle');
+vault.replaceChildren(chatIcon('githubVault'), el('span', vaultLabel));
+vault.setAttribute('aria-haspopup', 'dialog');
+vault.setAttribute('aria-expanded', 'false');
+vaultDialog.addEventListener('close', () => vault.setAttribute('aria-expanded', 'false'));
+const vaultActions = {
+  open: [t('Abrir carpeta como bóveda'), t('Elige la carpeta existente que quieres explorar.')],
+  save: [t('Guardar conversación en GitHub Markdown Vault'), t('Elige dónde guardar la conversación dentro de la bóveda activa.')],
+  sync: [t('Conectar con GitHub y sincronizar bóveda')]
+};
+function vaultHeading(text) {
+  const heading = el('h2', text);
+  heading.id = 'vault-dialog-title';
+  return heading;
+}
+function showVaultOptions() {
+  const actions = el('div', undefined, 'vault-options');
+  for (const [action, [title]] of Object.entries(vaultActions)) {
+    actions.append(button(title, title, () => showVaultForm(action)));
+  }
+  const footer = el('div', undefined, 'vault-actions');
+  footer.append(button(t('Cancelar'), t('Cancelar'), () => vaultDialog.close()));
+  actions.append(footer);
+  vaultDialog.replaceChildren(vaultHeading('GitHub Markdown Vault'), actions);
+  actions.querySelector('button').focus();
+}
+function insertVaultTemplate(template) {
+  const draft = composerMarkdown(input).trim();
+  if (draft.length + template.length + (draft ? 2 : 0) > 100000) {
+    throw new Error(t('El borrador y la plantilla superan los 100.000 caracteres.'));
+  }
+  const end = document.createRange();
+  end.selectNodeContents(input); end.collapse(false);
+  input.focus();
+  const selection = window.getSelection();
+  selection.removeAllRanges(); selection.addRange(end);
+  editor.insertText((draft ? '\n\n' : '') + template);
+  remember();
+}
+function showVaultForm(action) {
+  const [title, description] = vaultActions[action];
+  const form = el('form', undefined, 'vault-form');
+  if (description) form.append(el('p', description));
+  let folder;
+  const name = el('input');
+  name.type = 'text';
+  name.required = true;
+  name.disabled = true;
+  const folderPath = el('p');
+  const browse = button(t('Examinar'), t('Seleccionar carpeta de la bóveda'), async () => {
+    browse.disabled = true;
+    back.disabled = true;
+    submit.disabled = true;
+    vaultDialog.setAttribute('aria-busy', 'true');
+    try {
+      const selected = await rpc('githubVault', { vaultAction: 'pickFolder' });
+      if (!selected) return;
+      folder = selected;
+      folderPath.textContent = selected.root;
+      name.disabled = false;
+      name.value = selected.name;
+      name.focus();
+      name.select();
+    } catch (failure) {
+      feedback.textContent = failure.message || String(failure);
+    } finally {
+      browse.disabled = back.disabled = false;
+      submit.disabled = !folder;
+      vaultDialog.removeAttribute('aria-busy');
+    }
+  });
+  if (action === 'open') {
+    const label = el('label', t('Nombre de la bóveda'));
+    label.append(name);
+    form.append(browse, folderPath, label);
+  }
+  const feedback = el('p');
+  feedback.setAttribute('role', 'alert');
+  const footer = el('div', undefined, 'vault-actions');
+  const back = button(t('Volver'), t('Volver'), showVaultOptions);
+  const submitText = action === 'sync' ? t('Sincronizar') : action === 'save' ? t('Guardar como…') : t('Abrir bóveda');
+  const submit = el('button', submitText);
+  submit.type = 'submit';
+  submit.disabled = action === 'open';
+  footer.append(back, submit);
+  form.append(feedback, footer);
+  vaultDialog.replaceChildren(vaultHeading(title), form);
+  (action === 'open' ? browse : submit).focus();
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (submit.disabled) return;
+    submit.disabled = back.disabled = browse.disabled = true;
+    submit.textContent = t('Procesando…');
+    feedback.textContent = '';
+    vaultDialog.setAttribute('aria-busy', 'true');
+    try {
+      const result = await rpc('githubVault', { vaultAction: action, folder: folder?.root, name: name.value });
+      if (result === false || (action === 'save' && !result?.saved)) return;
+      vaultDialog.close();
+      if (result?.saved) notice.textContent = t('Conversación guardada en la carpeta local de GitHub Markdown Vault.');
+    } catch (failure) {
+      feedback.textContent = failure.message || String(failure);
+    } finally {
+      vaultDialog.removeAttribute('aria-busy');
+      submit.disabled = back.disabled = browse.disabled = false;
+      submit.textContent = submitText;
+    }
+  });
+}
+vaultDialog.addEventListener('cancel', event => {
+  if (vaultDialog.hasAttribute('aria-busy')) event.preventDefault();
+});
+left.append(permission, formatToggle, vault);
 const right = el('div', undefined, 'toolbar-right');
 const model = el('select'); model.setAttribute('aria-label', t('Modelo')); model.title = t('Seleccionar modelo disponible');
 model.append(option(t('Modelo predeterminado'), ''));
@@ -242,12 +405,23 @@ async function loadModels() {
 }
 model.addEventListener('focus', loadModels); model.addEventListener('pointerdown', loadModels);
 model.addEventListener('change', () => rpc('model', { value: model.value }).catch(error));
-const send = button('↑', t('Enviar mensaje'), () => submit(), 'send');
-right.append(model, ollamaPicker, send); toolbar.append(left, right);
-composer.append(resizeHandle, attachmentList, input, editor.toolbar, toolbar); footer.append(approvals, notice, composer);
+const send = button('', t('Enviar mensaje'), () => submit(), 'send');
+const stop = button('', t('Detener respuesta'), () => rpc('stop'), 'send stop-response');
+stop.append(chatIcon('stop'));
+stop.hidden = true;
+const sendIcon = chatIcon('send');
+const queueIcon = chatIcon('queue');
+send.append(sendIcon);
+const queued = el('p', undefined, 'notice');
+queued.setAttribute('role', 'status');
+right.append(model, ollamaPicker, stop, send); toolbar.append(left, right);
+composer.append(resizeHandle, attachmentList, input, editor.toolbar, toolbar); footer.append(approvals, notice, queued, composer);
 const footnote = el('p', t('Enter envía · Mayús+Enter añade una línea'), 'footnote'); footer.append(footnote);
-root.replaceChildren(header, pathLabel, conversation, footer);
-function remember() { api.setState({ sessionId: state?.session.id || previous.sessionId, draftHtml: input.innerHTML, attachments, composerHeight, formatVisible }); }
+root.replaceChildren(header, pathLabel, conversation, footer, vaultDialog);
+function remember() {
+  drafts[sessionId] = { draftHtml: input.innerHTML, attachments, composerHeight, formatVisible };
+  api.setState({ sessionId, drafts });
+}
 input.addEventListener('input', remember);
 input.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit().catch(error); } });
 input.addEventListener('dragover', event => event.preventDefault());
@@ -308,8 +482,7 @@ function renderAttachments() {
   });
 }
 async function submit() {
-  if (state?.running) { await rpc('stop'); return; }
-  if (submitting || readingClipboard) return;
+  if (!state || readingClipboard) return;
   const text = composerMarkdown(input).trim();
   if (!text && !pastedImages.length && !attachments.length) return;
   if (state?.session.provider === 'ollama' && !state.session.model) { notice.textContent = t('Descarga o selecciona un modelo de Ollama antes de enviar.'); return; }
@@ -317,8 +490,7 @@ async function submit() {
   const formatted = input.querySelector('a,b,blockquote,em,font,hr,i,ol,pre,s,span[style],strike,strong,table,u,ul,div[style],p[style]') ? draftHtml : undefined;
   const chosen = attachments;
   const clipboard = pastedImages;
-  submitting = true; send.disabled = true;
-  input.replaceChildren(); attachments = []; pastedImages = []; renderAttachments(); remember();
+  input.replaceChildren(); attachments = []; pastedImages = []; renderAttachments(); remember(); input.focus();
   try { await rpc('send', { text, attachments: chosen, pastedImages: clipboard.map(({ mime, data }) => ({ mime, data })), formatted }); }
   catch (err) {
     if (!input.hasChildNodes() && !attachments.length && !pastedImages.length && !readingClipboard) {
@@ -326,27 +498,12 @@ async function submit() {
     }
     error(err);
   }
-  finally { submitting = false; send.disabled = false; input.focus(); }
+
 }
 agent.addEventListener('change', () => { const selected = agent.value; agent.value = state.session.provider; rpc('agent', { value: selected }).catch(error); });
-let lastContent = ''; let lastApprovals = ''; let lastContext = '';
-function renderContext() {
-  const signature = JSON.stringify(state.messages.filter(entry => entry.role === 'user').map(entry => [entry.id, entry.text]));
-  if (signature === lastContext) return;
-  lastContext = signature;
-  historyEntries.replaceChildren();
-  for (const entry of state.messages.filter(entry => entry.role === 'user')) {
-    historyEntries.append(button(entry.text.slice(0, 100), entry.text, () => {
-      document.getElementById('message-' + entry.id)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-      setHistory(false, true);
-    }, 'history-link'));
-  }
-  if (!historyEntries.childElementCount) historyEntries.append(el('p', t('Los mensajes de este chat aparecer\u00e1n aqu\u00ed.')));
-}
-
+let lastContent = ''; let lastApprovals = '';
 function render() {
   const session = state.session;
-  renderContext();
   remember();
   agent.value = session.provider; pathLabel.textContent = session.root; pathLabel.title = session.root;
   permission.options[3].textContent = session.provider === 'codex' ? t('\u2699\uFE0F Personalizado (config.toml)') : t('\u2699\uFE0F Personalizado (configuraci\u00f3n)');
@@ -368,7 +525,13 @@ function render() {
   model.hidden = session.provider === 'ollama'; ollamaPicker.hidden = session.provider !== 'ollama';
   ollamaModelName.textContent = session.model || t('Modelo'); ollamaToggle.disabled = !!state.running;
   if (state.running || session.provider !== 'ollama') setOllamaMenu(false, false);
-  send.replaceChildren(chatIcon(state.running ? 'stop' : 'send')); send.title = state.running ? t('Detener respuesta') : t('Enviar mensaje'); send.setAttribute('aria-label', send.title); send.disabled = submitting && !state.running;
+  stop.hidden = !state.running;
+  const actionIcon = state.running ? queueIcon : sendIcon;
+  if (send.firstChild !== actionIcon) send.replaceChildren(actionIcon);
+  send.title = state.running ? t('Encolar mensaje') : t('Enviar mensaje');
+  send.setAttribute('aria-label', send.title);
+  send.disabled = session.provider === 'ollama' && !session.model;
+  queued.textContent = state.queued ? t('Mensajes en cola: {0}', state.queued) : '';
   const transcript = JSON.stringify(state.messages);
   if (lastContent !== transcript) {
     const atBottom = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 100;
@@ -408,7 +571,6 @@ function render() {
     if (atBottom || state.messages.at(-1)?.role === 'user') conversation.scrollTop = conversation.scrollHeight;
   }
   downloadModel.hidden = session.provider !== 'ollama';
-  if (session.provider === 'ollama' && !session.model && !state.running) send.disabled = true;
   welcome.hidden = state.messages.length > 0;
   if (state.notice) notice.textContent = state.notice;
   else if (state.running) notice.replaceChildren(chatIcon('chatGradient'), el('span', t('{0} está escribiendo…', agentName(session.provider))));
@@ -433,6 +595,10 @@ function render() {
 window.addEventListener('message', event => {
   const message = event.data;
   if (message.type === 'reply') { const call = pending.get(message.requestId); if (!call) return; pending.delete(message.requestId); message.error ? call.reject(new Error(message.error)) : call.resolve(message.result); }
+  if (message.type === 'vaultTemplate') {
+    try { insertVaultTemplate(message.template); notice.textContent = t('Contenido del Vault añadido al borrador.'); }
+    catch (failure) { error(failure); }
+  }
   if (message.type === 'chat') { state = message; render(); }
 });
-renderAttachments(); api.postMessage({ action: 'ready' });
+renderAttachments(); remember(); api.postMessage({ action: 'ready' });

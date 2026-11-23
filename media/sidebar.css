@@ -11,13 +11,15 @@ button { font: inherit; color: inherit; border: 0; background: transparent; curs
 .chat-row { position: relative; display: flex; align-items: center; min-height: 24px; margin: 1px 0; border: 1px solid transparent; border-radius: 6px; }
 .chat-row.selected { background: linear-gradient(var(--vscode-sideBar-background, #fff), var(--vscode-sideBar-background, #fff)) padding-box, linear-gradient(100deg, #087eb9, #40bea4) border-box; box-shadow: 0 0 5px #149cb44d, inset 0 0 5px #40bea41f; }
 .chat-select { display: flex; align-items: center; gap: 5px; width: 100%; min-width: 0; text-align: left; padding: 2px 4px; }
+.chat-label { display: grid; flex: 1; min-width: 0; }
+.chat-heading { display: flex; gap: 5px; min-width: 0; align-items: baseline; }
 .chat-name, .file-row span, .folder summary span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .chat-status { font-size: 11px; color: var(--vscode-descriptionForeground); white-space: nowrap; }
 .chat-close { display: flex; align-items: center; padding: 2px; opacity: 0; }
 .chat-row:hover .chat-close, .chat-row:focus-within .chat-close { opacity: 1; }
 .chat-row:hover, .file-row:hover, .folder summary:hover { background-color: var(--vscode-list-hoverBackground); }
 .ui-icon { width: 16px; height: 16px; flex: 0 0 16px; }
-#files { padding: 0 4px; }
+#files, #vault-files { padding: 0 4px; }
 .files-title-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
 .tree-controls { display: flex; align-items: center; gap: 2px; margin-left: auto; flex-shrink: 0; }
 .tree-controls button { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 2px; border-radius: 3px; }
@@ -32,3 +34,15 @@ button { font: inherit; color: inherit; border: 0; background: transparent; curs
 button:focus-visible, summary:focus-visible { outline: 1px solid var(--vscode-focusBorder, #087eb9); outline-offset: -1px; }
 .empty, #sidebar-notice { color: var(--vscode-descriptionForeground); font-size: 11px; margin: 5px 8px; }
 #sidebar-notice:empty { display: none; }
+
+.vault-sync { display: inline-flex; align-items: center; justify-content: center; margin-left: auto; width: 17px; height: 17px; color: var(--vscode-descriptionForeground); font-size: 13px; }
+.vault-sync { padding: 0; border-radius: 3px; }
+.vault-sync:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); }
+.vault-sync:disabled { opacity: .5; cursor: wait; }
+.vault-sync[data-status='synced'] { color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); }
+.vault-sync[data-status='pending'] { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }
+.vault-file { display: flex; align-items: center; }
+.vault-file > .file-row { flex: 1; min-width: 0; }
+.vault-insert, .vault-trash { display: inline-flex; align-items: center; justify-content: center; padding: 2px; border-radius: 3px; }
+.vault-insert:hover:not(:disabled), .vault-trash:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); }
+.vault-insert:disabled, .vault-trash:disabled { opacity: .45; cursor: default; }

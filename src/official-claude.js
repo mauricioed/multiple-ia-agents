@@ -1,16 +1,36 @@
 'use strict';
-  const {t}=require('./i18n');
-  async function openOfficialClaude(vscode){
-    if(!vscode.workspace.isTrusted)throw new Error(t('Confia en el workspace para abrir Claude.'));
-    const extension=vscode.extensions.getExtension('anthropic.claude-code');
-    if(!extension)throw new Error(t('Instala y habilita Claude Code de Anthropic para abrir su chat oficial.'));
-    await extension.activate();
-    const commands=await vscode.commands.getCommands(true);
-    const command=commands.includes('claude-vscode.primaryEditor.open')?'claude-vscode.primaryEditor.open':commands.includes('claude-vscode.editor.open')?'claude-vscode.editor.open':undefined;
-    if(!command)throw new Error(t('Actualiza la extension oficial de Claude y recarga VS Code.'));
-    await vscode.commands.executeCommand(command);return true;
+const path = require('node:path');
+const fs = require('node:fs/promises');
+const { t } = require('./i18n');
+
+async function openOfficialClaude(vscode, root) {
+  if (!vscode.workspace.isTrusted) throw new Error(t('Confia en el workspace para abrir Claude.'));
+  const folder = await fs.realpath(root);
+  if (!(await fs.stat(folder)).isDirectory()) throw new Error(t('La carpeta del chat ya no existe.'));
+  // A new Claude panel uses the first workspace folder as its working directory.
+  const primary = vscode.workspace.workspaceFolders?.[0]?.uri;
+  const primaryPath = primary && await fs.realpath(primary.fsPath).catch(() => undefined);
+  if (!primaryPath || path.relative(primaryPath, folder)) {
+    const openFolder = t('Abrir carpeta en esta ventana');
+    const choice = await vscode.window.showWarningMessage(
+      t('Claude Code abre el chat en la primera carpeta de la ventana. Abre la carpeta seleccionada en esta ventana para usarla con Claude.'),
+      { modal: true, detail: folder }, openFolder
+    );
+    if (choice === openFolder) await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(folder), { forceReuseWindow: true });
+    return false;
   }
-  module.exports={openOfficialClaude};
+  const extension = vscode.extensions.getExtension('anthropic.claude-code');
+  if (!extension) throw new Error(t('Instala y habilita Claude Code de Anthropic para abrir su chat oficial.'));
+  await extension.activate();
+  const commands = await vscode.commands.getCommands(true);
+  const command = commands.includes('claude-vscode.primaryEditor.open') ? 'claude-vscode.primaryEditor.open'
+    : commands.includes('claude-vscode.editor.open') ? 'claude-vscode.editor.open' : undefined;
+  if (!command) throw new Error(t('Actualiza la extension oficial de Claude y recarga VS Code.'));
+  await vscode.commands.executeCommand(command);
+  return true;
+}
+
+module.exports = { openOfficialClaude };
 
 // Track VS Code's public tab objects, without accessing Claude's private state.
 class OfficialClaudeTabs {
@@ -32,10 +52,10 @@ class OfficialClaudeTabs {
   async open(id, openChat) {
     const before = new Set(this.all());
     const result = await openChat();
+    if (!result) return false;
     // The official command can resolve before VS Code publishes the new tab.
     for (let attempt = 0; attempt < 40; attempt++) {
-      const tabs = this.all().filter(tab => this.isClaude(tab));
-      const tab = tabs.find(tab => !before.has(tab)) || tabs.find(tab => tab.isActive) || (tabs.length === 1 ? tabs[0] : undefined);
+      const tab = this.all().find(tab => this.isClaude(tab) && !before.has(tab));
       if (tab) { this.tabs.set(id, tab); break; }
       if (!this.vscode.window.tabGroups) break;
       await new Promise(resolve => setTimeout(resolve, 50));

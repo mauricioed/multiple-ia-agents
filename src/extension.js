@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const { randomBytes } = require('node:crypto');
 const core = require('./core');
 const { ChatFileTree } = require('./file-tree');
+const { GitHubVault } = require('./github-vault');
 const { ChatSessions } = require('./chat-sessions');
 
 class WorkspaceManager extends ChatSessions {
@@ -70,6 +71,7 @@ function activate(context) {
   const output = vscode.window.createOutputChannel('Multiple IA Agents');
   const manager = new WorkspaceManager(context, output);
   manager.fileTree = new ChatFileTree(manager);
+  manager.vault = new GitHubVault(context);
   const { Sidebar } = require('./sidebar');
   manager.sidebar = new Sidebar(manager, context.extensionUri);
   const sidebarRegistration = vscode.window.registerWebviewViewProvider('multipleIAAgents.explorer', manager.sidebar);
@@ -81,7 +83,7 @@ function activate(context) {
   };
   context.subscriptions.push(manager, output, manager.fileTree, manager.sidebar, sidebarRegistration,
     vscode.window.registerWebviewPanelSerializer('multipleIAAgents.chat', { deserializeWebviewPanel: (panel, state) => manager.restoreChatPanel(panel, state) }),
-    vscode.commands.registerCommand('multipleIAAgents.refreshFiles', () => { manager.sidebar.refreshFiles(); }),
+    vscode.commands.registerCommand('multipleIAAgents.refreshFiles', () => { manager.sidebar.refreshFiles(); manager.sidebar.refreshVault(); }),
     vscode.commands.registerCommand('multipleIAAgents.openChatFile', async entry => {
       try { await manager.fileTree.activate(entry); } catch (error) { vscode.window.showErrorMessage(error.message); }
     }),

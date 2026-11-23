@@ -31,7 +31,9 @@ function chatIcon(name) {
     add: 'M8 2v12M2 8h12', close: 'm4 4 8 8M12 4l-8 8',
     history: 'M2 6a6 6 0 1 1 .4 5M2 2v4h4M8 4.5V8l2.5 1.5',
     terminal: 'M1.5 2.5h13v11h-13Zm2 3 3 2.5-3 2.5M8 11h4',
-    send: 'M8 14V2m-5 5 5-5 5 5', stop: 'M4 4h8v8H4Z',
+    send: 'M8 12.75v-9.5m-3.75 3.75L8 3.25 11.75 7',
+    queue: 'M2.5 4h8M2.5 8h5m-5 4h5m4 1.5v-5m-2.5 2.5h5',
+    stop: 'M5 4h6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z',
     brand: 'M13 4.5H5.5a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3H7v3l4.5-3h4a3 3 0 0 0 3-3V12',
     welcome: 'M2 2h12v9H9l-3 3v-3H2Z'
   };
@@ -40,9 +42,28 @@ function chatIcon(name) {
   svg.setAttribute('width', '16'); svg.setAttribute('height', '16');
   svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('focusable', 'false');
   const path = document.createElementNS(svg.namespaceURI, 'path');
+  if (name === 'githubVault') {
+    svg.setAttribute('viewBox', '0 0 24 24');
+    path.setAttribute('d', 'M5 3h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z');
+    path.setAttribute('fill', '#6639ba');
+    path.setAttribute('stroke', '#a58bdf');
+    const door = document.createElementNS(svg.namespaceURI, 'path');
+    door.setAttribute('d', 'M6 6h12v11H6z M9 11.5a3 3 0 1 0 6 0 3 3 0 1 0-6 0 M12 8.5v6 M9 11.5h6 M6 20v1 M18 20v1');
+    door.setAttribute('fill', 'none');
+    door.setAttribute('stroke', '#fff');
+    door.setAttribute('stroke-linecap', 'round');
+    door.setAttribute('stroke-linejoin', 'round');
+    svg.append(path, door);
+    return svg;
+  }
   path.setAttribute('d', paths[name === 'chatGradient' ? 'chat' : name] || paths.brand);
   path.setAttribute('fill', ['stop', 'welcome'].includes(name) ? 'currentColor' : 'none');
   path.setAttribute('stroke', 'currentColor'); path.setAttribute('stroke-width', name === 'brand' ? '1.6' : '1.2');
+  if (['send', 'queue'].includes(name)) {
+    path.setAttribute('stroke-width', '1.7');
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+  }
   if (name === 'bold' || name === 'more') path.setAttribute('stroke-width', '1.8');
   if (['more', 'bullets', 'link', 'italic'].includes(name)) path.setAttribute('stroke-linecap', 'round');
   if (name === 'chatGradient') {

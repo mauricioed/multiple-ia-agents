@@ -34,12 +34,9 @@ class ChatSessions extends TerminalSessions {
       if (typeof original?.backendId === 'string') session.backendId = original.backendId;
       session.permission = permissionMode(original?.permission);
     }
-    this.panels = new Map(); this.backends = new Map(); this.histories = new Map(); this.running = new Map(); this.approvals = new Map(); this.writes = Promise.resolve();
+    this.panelReady = new WeakMap(); this.panelBindings = new WeakMap(); this.vaultFolders = new WeakMap();
+    this.panels = new Map(); this.backends = new Map(); this.histories = new Map(); this.running = new Map(); this.messageQueues = new Map(); this.approvals = new Map(); this.writes = Promise.resolve();
     this.officialTabs = new OfficialClaudeTabs(vscode, id => this.closeSession(id), error => this.log(error.message));
-    const restoredClaudeTabs = this.officialTabs.all().filter(tab => this.officialTabs.isClaude(tab));
-    if (restoredClaudeTabs.length === 1) for (const session of this.sessions) {
-      if (session.provider === 'claude' && session.mode !== 'terminal' && !session.closed) this.officialTabs.tabs.set(session.id, restoredClaudeTabs[0]);
-    }
     this.normalizeSessionNames();
   }
   normalizeSessionNames() {
@@ -92,8 +89,16 @@ class ChatSessions extends TerminalSessions {
     const session = { id: randomUUID(), name, provider: selected.provider, root, permission, ...(model ? { model } : {}) };
     if (provider === 'claude') {
       const previousActive = this.activeId; this.sessions.push(session); this.activeId = session.id;
-      try { await this.showTerminal(session); } catch (error) { this.sessions = this.sessions.filter(item => item !== session); this.activeId = previousActive; throw error; }
-      await this.persist(); return;
+      let opened = false;
+      try { opened = await this.showTerminal(session); }
+      finally {
+        if (!opened) {
+          this.sessions = this.sessions.filter(item => item !== session);
+          if (this.activeId === session.id) this.activeId = previousActive;
+        }
+      }
+      if (opened) await this.persist();
+      return;
     }
     this.sessions.push(session); this.activeId = session.id;
     await this.persist(); await this.showTerminal(session);
@@ -108,7 +113,7 @@ class ChatSessions extends TerminalSessions {
       let messages = [];
       try { const result = JSON.parse(await fs.readFile(this.historyFile(session), 'utf8')); if (Array.isArray(result)) messages = result.filter(m => m && typeof m.text === 'string' && ['user', 'assistant', 'activity', 'error', 'context'].includes(m.role)); }
       catch (error) { if (error.code !== 'ENOENT') throw new Error(t('No se pudo cargar el historial. Se conserva el archivo original.')); }
-      this.histories.set(session.id, messages);
+      if (!this.histories.has(session.id)) this.histories.set(session.id, messages);
     }
     return this.histories.get(session.id);
   }
@@ -130,9 +135,9 @@ class ChatSessions extends TerminalSessions {
     }
     return agent;
   }
-  async showTerminal(session) {
+  async showTerminal(session, viewColumn) {
     if (session.mode === 'terminal' || session.provider === 'terminal') return super.showTerminal(session);
-    if (session.provider === 'claude') return this.officialTabs.open(session.id, () => openOfficialClaude(vscode));
+    if (session.provider === 'claude') return this.officialTabs.open(session.id, () => openOfficialClaude(vscode, session.root));
     if (!vscode.workspace.isTrusted) throw new Error(t('Confía en el workspace para iniciar el chat.'));
     const root = await core.resolveEntry(session.root);
     if (!(await fs.stat(root)).isDirectory()) throw new Error(t('La carpeta del chat ya no existe.'));
@@ -140,23 +145,38 @@ class ChatSessions extends TerminalSessions {
     if (existing) { existing.reveal(existing.viewColumn); return existing; }
     await this.history(session);
     const panel = vscode.window.createWebviewPanel('multipleIAAgents.chat', session.name,
-      this.panels.size ? vscode.ViewColumn.Beside : vscode.ViewColumn.Active,
+      viewColumn ?? vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')] });
     this.attachChatPanel(session, panel);
     return panel;
   }
   attachChatPanel(session, panel) {
+    this.panelBindings.get(panel)?.();
     this.panels.set(session.id, panel);
+    let resolveReady;
+    const ready = new Promise(resolve => { resolveReady = resolve; });
+    this.panelReady.set(panel, ready);
     panel.title = session.name;
     panel.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')] };
     // Subscribe before setting HTML: a cached webview may send ready immediately.
-    panel.webview.onDidReceiveMessage(message => this.handleChat(session, panel, message));
-    panel.onDidChangeViewState(() => { if (panel.active && this.activeId !== session.id) { this.activeId = session.id; this.persist().catch(error => this.log(error.message)); } });
-    panel.onDidDispose(() => {
+    const messages = panel.webview.onDidReceiveMessage(message => {
+      if (message?.action === 'ready') resolveReady(true);
+      return this.handleChat(session, panel, message);
+    });
+    const viewState = panel.onDidChangeViewState(() => { if (panel.active && this.activeId !== session.id) { this.activeId = session.id; this.persist().catch(error => this.log(error.message)); } });
+    const disposal = panel.onDidDispose(() => {
+      this.panelBindings.get(panel)?.();
       if (this.panels.get(session.id) !== panel) return;
       this.panels.delete(session.id); this.closeSession(session.id).catch(error => this.log(error.message));
     });
-    panel.webview.html = this.chatHtml(panel.webview);
+    this.panelBindings.set(panel, () => {
+      resolveReady(false);
+      messages.dispose();
+      viewState.dispose();
+      disposal.dispose();
+      this.panelBindings.delete(panel);
+    });
+    panel.webview.html = this.chatHtml(panel.webview, session.id);
     this.publish();
   }
   async restoreChatPanel(panel, state) {
@@ -178,22 +198,88 @@ class ChatSessions extends TerminalSessions {
     this.attachChatPanel(session, panel);
     await this.persist();
   }
-  chatHtml(webview) {
+  chatHtml(webview, sessionId) {
+    const encodedSessionId = encodeURIComponent(sessionId);
     const nonce = randomBytes(18).toString('base64');
     const asset = name => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', name));
-    return `<!DOCTYPE html><html lang="${language}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';"><link rel="stylesheet" href="${asset('chat.css')}"><link rel="stylesheet" href="${asset('controls.css')}"><title>${t('Chat del agente')}</title></head><body><div id="app"><p role="status">${t('Cargando conversacion...')}</p></div><script nonce="${nonce}" src="${asset('i18n.js')}"></script><script nonce="${nonce}" src="${asset('icons.js')}"></script><script nonce="${nonce}" src="${asset('composer-editor.js')}"></script><script nonce="${nonce}" src="${asset('chat.js')}"></script></body></html>`;
+    return `<!DOCTYPE html><html lang="${language}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';"><link rel="stylesheet" href="${asset('chat.css')}"><link rel="stylesheet" href="${asset('controls.css')}"><title>${t('Chat del agente')}</title></head><body><div id="app" data-session-id="${encodedSessionId}"><p role="status">${t('Cargando conversacion...')}</p></div><script nonce="${nonce}" src="${asset('i18n.js')}"></script><script nonce="${nonce}" src="${asset('icons.js')}"></script><script nonce="${nonce}" src="${asset('composer-editor.js')}"></script><script nonce="${nonce}" src="${asset('chat.js')}"></script></body></html>`;
   }
+  supportsVaultChat(session) {
+    return !!session && session.mode !== 'terminal' && session.provider !== 'terminal' && session.provider !== 'claude';
+  }
+
+  activeVaultChat(id) {
+    const session = this.sessions.find(item => item.id === id && !item.closed);
+    if (id !== this.activeId || !this.supportsVaultChat(session)) throw new Error(t('Activa un chat compatible para continuar.'));
+    return session;
+  }
+
+  async insertVaultDocument(id, entry) {
+    const session = this.activeVaultChat(id);
+    const template = await this.vault.loadTemplate(entry);
+    this.activeVaultChat(id);
+    const panel = await this.showTerminal(session);
+    const ready = this.panelReady.get(panel);
+    let timer;
+    try {
+      const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(false), 5000); });
+      if (!await Promise.race([ready, timeout]) || !await panel.webview.postMessage({ type: 'vaultTemplate', template })) {
+        throw new Error(t('El editor del chat no está disponible.'));
+      }
+    } finally { clearTimeout(timer); }
+  }
+
+  async exportVaultConversation(session) {
+    const saved = await this.vault.saveConversation(session, await this.history(session));
+    if (saved) this.sidebar?.refreshVault();
+    return saved;
+  }
+
   async handleChat(session, panel, message) {
     if (this.panels.get(session.id) !== panel || !message || typeof message.action !== 'string') return;
     const reply = (result, error) => panel.webview.postMessage({ type: 'reply', requestId: message.requestId, result, error });
     try {
       if (message.action === 'ready') { this.pushChat(session); return; }
-      if (message.action === 'send') { await this.send(session, message.text, message.attachments, message.pastedImages, message.formatted); reply(true); return; }
+      if (message.action === 'send') { await this.submitMessage(session, message); reply(true); return; }
+      if (message.action === 'closedChatHistory') { reply(await this.closedChatItems(session.root)); return; }
+      if (message.action === 'reopenChat') {
+        if (!this.closedChats(session.root).some(chat => chat.id === message.id)) {
+          throw new Error(t('El chat cerrado no está disponible para esta carpeta.'));
+        }
+        const target = this.session(message.id);
+        if (!this.supportsVaultChat(target)) throw new Error(t('El chat cerrado no est? disponible para esta carpeta.'));
+        await this.history(target);
+        if (this.panels.get(session.id) !== panel || !target.closed) return;
+        this.panels.delete(session.id);
+        delete target.closed;
+        this.activeId = target.id;
+        reply(true);
+        this.attachChatPanel(target, panel);
+        await this.closeSession(session.id);
+        return;
+      }
       if (message.action === 'stop') { await this.stopSession(session); reply(true); return; }
       if (message.action === 'approval') {
         const prompt = this.approvals.get(message.id);
         if (!prompt || prompt.sessionId !== session.id) throw new Error(t('La solicitud de permiso ha caducado.'));
         prompt.resolve(prompt.question ? String(message.answer || '').slice(0, 10000) : message.accept === true); reply(true); return;
+      }
+      if (message.action === 'githubVault') {
+        const action = message.vaultAction;
+        if (action === 'save') {
+          reply({ saved: await this.exportVaultConversation(session) });
+          return;
+        }
+        if (action === 'pickFolder') {
+          const folder = await this.vault.pickFolder();
+          if (folder) this.vaultFolders.set(panel, folder);
+          reply(folder); return;
+        }
+        if (action === 'open' && message.folder !== this.vaultFolders.get(panel)?.root) throw new Error(t('Selecciona una carpeta.'));
+        const changed = await this.vault.run(action, this.vaultFolders.get(panel), message.name);
+        if (changed && action === 'open') this.vaultFolders.delete(panel);
+        if (changed) this.sidebar?.refreshVault();
+        reply(changed); return;
       }
       if (message.action === 'attach') {
         const chosen = await vscode.window.showOpenDialog({ canSelectMany: true, canSelectFiles: true, canSelectFolders: false, defaultUri: vscode.Uri.file(session.root), openLabel: t('Adjuntar texto e imágenes') });
@@ -365,6 +451,39 @@ class ChatSessions extends TerminalSessions {
     }
     return { text: chunks.join('\n\n'), images };
   }
+  async submitMessage(session, { text, attachments, pastedImages, formatted }) {
+    if (session.closed) throw new Error(t('Reabre el chat antes de enviar.'));
+    let queue = this.messageQueues.get(session.id);
+    const processing = !!queue;
+    if (!queue) {
+      queue = [];
+      this.messageQueues.set(session.id, queue);
+    }
+    if (queue.length >= 10) throw new Error(t('Hay 10 mensajes en cola. Espera a que se envíen.'));
+    return new Promise((resolve, reject) => {
+      queue.push({ text, attachments, pastedImages, formatted, resolve, reject });
+      if (processing) this.pushChat(session);
+      else void this.processMessages(session, queue);
+    });
+  }
+
+  async processMessages(session, queue) {
+    while (queue.length) {
+      const { text, attachments, pastedImages, formatted, resolve, reject } = queue.shift();
+      try { await this.send(session, text, attachments, pastedImages, formatted); resolve(true); }
+      catch (error) { reject(error); }
+    }
+    this.messageQueues.delete(session.id);
+    this.pushChat(session);
+  }
+
+  clearMessageQueue(id) {
+    const queue = this.messageQueues.get(id);
+    if (!queue) return;
+    const error = new Error(t('Se canceló el envío de los mensajes en cola.'));
+    for (const message of queue.splice(0)) message.reject(error);
+  }
+
   async send(session, text, attachments = [], pastedImages = [], formatted) {
     if (session.provider === 'claude') throw new Error(t('Utiliza el chat oficial de Claude.'));
     if (session.closed) throw new Error(t('Reabre el chat antes de enviar.'));
@@ -389,7 +508,7 @@ class ChatSessions extends TerminalSessions {
         created: Date.now() };
       messages.push(submitted);
       session.updated = Date.now();
-      await this.saveHistory(session); this.pushChat(session);
+      await this.saveHistory(session); this.pushChat(session); void this.sidebar?.publish();
       let turnInput = prompt;
       let turnImages = images;
       while (!run.controller.signal.aborted) {
@@ -469,31 +588,66 @@ class ChatSessions extends TerminalSessions {
     run.controller.abort(); this.clearApprovals(session.id); await this.backends.get(session.id)?.stop(); this.pushChat(session);
   }
   async closeSession(id) {
+    this.clearMessageQueue(id);
     const session = this.session(id); await this.officialTabs.close(id); await this.stopSession(session);
     this.backends.get(id)?.dispose(); this.backends.delete(id);
     const panel = this.panels.get(id); this.panels.delete(id); panel?.dispose();
     const terminal = this.terminals.get(id); this.terminals.delete(id); terminal?.dispose();
     session.closed = true;
+    session.closedAt = Date.now();
     if (this.activeId === id) this.activeId = this.sessions.find(s => !s.closed)?.id;
     await this.persist(); return true;
   }
-  async selectSession(id, focus = true) {
+  async selectSession(id, focus = true, viewColumn = vscode.ViewColumn.Active) {
     const session = this.session(id);
     if (!session.closed || !focus) return super.selectSession(id, focus);
-    if (!await this.showTerminal(session)) return;
+    if (!await this.showTerminal(session, viewColumn)) return;
     delete session.closed;
     this.activeId = id;
     await this.persist();
   }
+  async latestMessage(session) {
+    if (!this.supportsVaultChat(session)) return undefined;
+    const messages = await this.history(session).catch(() => []);
+    const latest = messages.findLast(entry =>
+      entry.role === 'user' && typeof entry.text === 'string' && entry.text.trim());
+    return latest;
+  }
+
+  closedChats(root) {
+    return this.sessions.filter(session => session.closed &&
+      (!root || (session.mode !== 'terminal' && session.provider !== 'terminal' && !path.relative(root, session.root))))
+      .reverse().sort((a, b) => (b.closedAt || 0) - (a.closedAt || 0));
+  }
+
+  async closedChatItems(root) {
+    const items = await Promise.all(this.closedChats(root).map(async session => ({
+      session, message: await this.latestMessage(session)
+    })));
+    return items.filter(({ message }) => !root || message)
+      .sort((a, b) => (b.message?.created || 0) - (a.message?.created || 0))
+      .map(({ session, message }) => ({
+        label: session.name, description: session.root, id: session.id, created: message?.created,
+        detail: message?.text.trim().replace(/\s+/gu, ' ').slice(0, 180)
+      }));
+  }
+
   async reopenSession() {
-    const selected = await vscode.window.showQuickPick(this.sessions.filter(s => s.closed).map(s => ({ label: s.name, description: s.root, id: s.id })), { title: t('Reabrir conversación conservada') });
-    if (!selected) return;
-    await this.selectSession(selected.id);
+    const items = await this.closedChatItems();
+    if (!items.length) {
+      vscode.window.showInformationMessage(t('No hay chats cerrados.'));
+      return;
+    }
+    const selected = await vscode.window.showQuickPick(items, {
+      title: t('Reabrir chats cerrados'), matchOnDescription: true, matchOnDetail: true
+    });
+    if (selected) await this.selectSession(selected.id);
   }
   async restartSession(id) {
     const session = this.session(id);
     if (session.mode === 'terminal' || session.provider === 'terminal') return super.restartSession(id);
     if (session.provider === 'claude') return this.showTerminal(session);
+    this.clearMessageQueue(id);
     await this.stopSession(session); this.backends.get(id)?.dispose(); this.backends.delete(id);
     // Reconnect to the saved provider conversation instead of dropping its history.
     await this.showTerminal(session); this.pushChat(session);
@@ -505,7 +659,7 @@ class ChatSessions extends TerminalSessions {
   }
   pushChat(session, notice) {
     const messages = (this.histories.get(session.id) || []).map(({ contextText, images, ...entry }) => ({ ...entry, ...(entry.role === 'assistant' ? { html: md.render(entry.text) } : {}) }));
-    this.panels.get(session.id)?.webview.postMessage({ type: 'chat', session, messages: messages.filter(entry => entry.role !== 'context'), running: this.running.has(session.id), notice,
+    this.panels.get(session.id)?.webview.postMessage({ type: 'chat', session, messages: messages.filter(entry => entry.role !== 'context'), running: this.running.has(session.id), queued: this.messageQueues.get(session.id)?.length || 0, notice,
       approvals: [...this.approvals.values()].filter(p => p.sessionId === session.id).map(({ resolve, ...prompt }) => prompt),
       sessions: this.sessions.filter(s => !s.closed).map(s => ({ id: s.id, name: s.name, provider: s.provider, root: s.root })) });
   }

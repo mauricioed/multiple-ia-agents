@@ -353,40 +353,18 @@ test('the official Claude action registers the new tab and its workspace folder'
   const other = path.join(root, 'other');
   await fs.mkdir(other);
   f.manager.pickFolder = async () => other;
-  const { showInformationMessage } = fake.window;
-  t.after(() => { fake.window.showInformationMessage = showInformationMessage; });
-  const terminalAction = 'Abrir Claude Code en terminal';
-  fake.window.showInformationMessage = async (message, options, action) => {
-    assert.match(message, /carpeta principal/u);
-    assert.equal(options.modal, true);
-    assert.ok(options.detail.includes(other));
-    assert.equal(action, terminalAction);
-    return undefined;
-  };
-  assert.equal(await f.manager.openOfficialClaude(), false);
-  assert.deepEqual(calls, []);
-  assert.equal(f.manager.officialTabs.get(second.id), opened[1]);
-
-  group.activeTab = opened[1];
-  f.manager.syncOfficialChat();
-  fake.window.showInformationMessage = async () => terminalAction;
-  f.manager.createTerminalSession = async (provider, selectedRoot) => {
-    assert.equal(provider, 'claude');
-    assert.equal(selectedRoot, other);
-    f.manager.activeId = 'terminal';
-    f.manager.syncOfficialChat();
-    return { id: 'terminal' };
-  };
-  assert.equal(await f.manager.openOfficialClaude(), true);
-  assert.deepEqual(calls, [['multipleIAAgents.explorer.focus', { preserveFocus: true }]]);
-  assert.equal(f.manager.activeId, 'terminal');
+  await assert.rejects(f.manager.openOfficialClaude(), /no admite abrir otra carpeta/u);
+  assert.ok(calls.every(call => !Array.isArray(call) || !call[0].startsWith('claude-vscode.')));
   assert.equal(f.manager.officialTabs.get(second.id), opened[1]);
   assert.equal(f.manager.session(second.id).root, root);
 
-  fake.workspace.workspaceFolders = undefined;
-  calls.length = 0;
-  assert.equal(await f.manager.openOfficialClaude(), true);
-  assert.deepEqual(calls, [['multipleIAAgents.explorer.focus', { preserveFocus: true }]]);
+  // An unrelated tab event must not move the selection back to Claude.
+  group.activeTab = opened[1];
+  f.manager.syncOfficialChat();
+  f.manager.activeId = f.session.id;
+  f.manager.syncOfficialChat();
+  assert.equal(f.manager.activeId, f.session.id);
+
   await f.manager.closeSession(second.id);
 });
 

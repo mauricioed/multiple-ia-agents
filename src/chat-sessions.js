@@ -3,6 +3,7 @@ const { t, language } = require('./i18n');
 const vscode = require('vscode');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const os = require('node:os');
 const { fileURLToPath } = require('node:url');
 const { randomUUID, randomBytes } = require('node:crypto');
 const MarkdownIt = require('markdown-it');
@@ -10,6 +11,7 @@ const { TerminalSessions } = require('./terminal-sessions');
 const core = require('./core');
 const { backend } = require('./backends');
 const { ClaudeApiBackend, ClaudeApiKey } = require('./claude-api');
+const { openOfficialClaudeInFolder, unavailable: officialClaudeFolderUnavailable } = require('./official-claude-cwd');
 const claudeCli = require('./claude-cli');
 const { MODES, permissionMode } = require('./permissions');
 const MAX_CONTEXT = 128 * 1024;
@@ -89,21 +91,11 @@ class ChatSessions extends TerminalSessions {
       const root = await this.pickFolder(defaultPath);
       if (!root) return false;
       const first = vscode.workspace.workspaceFolders?.[0]?.uri;
-      const primary = first?.scheme === 'file' && await fs.realpath(first.fsPath).catch(() => undefined);
-      if (primary && !path.relative(primary, root)) {
-        return await this.launchOfficialClaude(this.requireOfficialClaude(), root);
-      }
-
-      const openTerminal = t('Abrir Claude Code en terminal');
-      const choice = await vscode.window.showInformationMessage(
-        t('Claude Code abre los chats nativos en la carpeta principal de VS Code.'), {
-          modal: true,
-          detail: t('Puedes usar la carpeta seleccionada en una terminal integrada de esta ventana.\n{0}', root)
-        }, openTerminal
-      );
-      if (choice !== openTerminal) return false;
-      await vscode.commands.executeCommand('multipleIAAgents.explorer.focus', { preserveFocus: true });
-      return Boolean(await this.createTerminalSession('claude', root));
+      if (first && first.scheme !== 'file') throw new Error(t('Esta versión admite carpetas locales.'));
+      const defaultFolder = first?.fsPath ?? os.homedir();
+      const primary = await fs.realpath(defaultFolder);
+      return await this.launchOfficialClaude(this.requireOfficialClaude(), root,
+        path.relative(primary, root) ? defaultFolder : undefined);
     } finally { this.openingOfficialChat = false; }
   }
 
@@ -113,7 +105,7 @@ class ChatSessions extends TerminalSessions {
     return extension;
   }
 
-  async launchOfficialClaude(extension, root) {
+  async launchOfficialClaude(extension, root, defaultFolder) {
     await vscode.commands.executeCommand('multipleIAAgents.explorer.focus', { preserveFocus: true });
     await extension.activate();
     const groups = vscode.window.tabGroups;
@@ -123,7 +115,10 @@ class ChatSessions extends TerminalSessions {
     const commands = await vscode.commands.getCommands(true);
     const command = ['claude-vscode.primaryEditor.open', 'claude-vscode.editor.open'].find(id => commands.includes(id));
     if (!command) throw new Error(t('Actualiza la extensión oficial de Claude y recarga VS Code.'));
-    await vscode.commands.executeCommand(command);
+    const open = () => vscode.commands.executeCommand(command);
+    const redirected = defaultFolder
+      ? await openOfficialClaudeInFolder(extension, defaultFolder, root, open)
+      : (await open(), true);
     let tab;
     const deadline = Date.now() + OFFICIAL_CLAUDE_TAB_TIMEOUT;
     do {
@@ -132,6 +127,10 @@ class ChatSessions extends TerminalSessions {
       await new Promise(resolve => setTimeout(resolve, 50));
     } while (Date.now() < deadline);
     if (!tab) throw new Error(t('No se pudo identificar la pestaña nueva de Claude Code.'));
+    if (!redirected) {
+      await groups.close(tab);
+      throw officialClaudeFolderUnavailable();
+    }
 
     const session = this.registerOfficialChat(tab, root);
     this.activeId = session.id;
@@ -139,6 +138,10 @@ class ChatSessions extends TerminalSessions {
     await this.focusOfficialChat(session.id);
     await vscode.commands.executeCommand('workbench.action.keepEditor');
     await vscode.commands.executeCommand('multipleIAAgents.explorer.focus', { preserveFocus: true });
+    if (defaultFolder && !this.officialClaudeReloadNoticeShown) {
+      this.officialClaudeReloadNoticeShown = true;
+      void vscode.window.showInformationMessage(t('Al recargar VS Code, Claude Code puede restaurar esta pestaña con la carpeta principal.'));
+    }
     return true;
   }
 

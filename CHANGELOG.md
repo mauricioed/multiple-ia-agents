@@ -1,3 +1,7 @@
+## 0.1.61
+
+- Open native Claude Code tabs for distinct folders in the same VS Code window with the verified Claude Code 2.1.331 build on Windows x64.
+
 ## 0.1.60
 
 - Keep Claude Code chats in the current VS Code window. Offer an integrated Claude Code terminal when the selected folder differs from the primary workspace folder.

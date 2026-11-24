@@ -2,7 +2,7 @@
     "name": "multiple-ia-agents",
     "displayName": "Multiple AI Agent Chats",
     "description": "%extension.description%",
-    "version": "0.1.60",
+    "version": "0.1.61",
     "publisher": "Mauricio",
     "icon": "media/icon.png",
     "engines": {

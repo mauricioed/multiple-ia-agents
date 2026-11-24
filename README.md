@@ -1,6 +1,6 @@
 # Multiple AI Agent Chats
 
-![VS Code ^1.145.0](https://img.shields.io/badge/VS%20Code-%5E1.145.0-4377bd) ![Version 0.1.60](https://img.shields.io/badge/version-0.1.60-655bd5) [![MIT License](https://img.shields.io/badge/license-MIT-56964d)](LICENSE)
+![VS Code ^1.145.0](https://img.shields.io/badge/VS%20Code-%5E1.145.0-4377bd) ![Version 0.1.61](https://img.shields.io/badge/version-0.1.61-655bd5) [![MIT License](https://img.shields.io/badge/license-MIT-56964d)](LICENSE)
 
 Manage Codex, Claude Code, and Ollama from the **AI Agents** sidebar in VS Code. Each chat or terminal can use a different local folder. Selecting a session also switches the file explorer to its folder.
 
@@ -22,7 +22,7 @@ Open independent chats with local history, attach files, and choose a permission
 
 When you create a Claude chat, choose how to access Claude:
 
-- **Official Claude Code.** Opens a new chat in Anthropic's panel for the primary workspace folder and lists it in AI Agents. For a different folder, AI Agents offers to open Claude Code in an integrated terminal in the same window. Claude Code manages its history and sign-in. Install and enable the Claude Code extension to use the native panel.
+- **Official Claude Code.** Opens a new chat in Anthropic's panel and lists it in AI Agents. Claude Code manages its history and sign-in. With the verified Windows x64 build of Claude Code 2.1.331, each new tab can use its selected folder in the same VS Code window. An unsupported build reports an error for a different folder. Folder selection for these tabs applies to the current extension host; Claude Code controls restoring its tabs on reload.
 - **Claude with an API key.** Uses this extension's chat panel, with attachments, permission modes, and local history, like Codex and Ollama. Anthropic does not allow third-party extensions to offer Claude.ai sign-in or use subscription limits, so this chat uses your own Anthropic API key. Usage is billed to your API account. The key is stored encrypted in VS Code's secret storage. Claude Code runs in `--bare` mode, which only accepts that key. Use **Set Anthropic API key** or **Remove Anthropic API key** from the Command Palette to manage it.
 
 The official [Claude Code extension](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code) is installed as a dependency and provides the Claude Code executable when it is not installed separately.

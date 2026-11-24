@@ -43,11 +43,16 @@ function restoreSessions(value) {
     if (!s || typeof s.id !== 'string' || seen.has(s.id) || typeof s.name !== 'string' || typeof s.root !== 'string' || !path.isAbsolute(s.root) || !['vscode', 'codex', 'claude', 'ollama', 'terminal'].includes(s.provider)) return false;
     seen.add(s.id);
     return true;
-  }).map(({ id, name, root, provider, nativeAgent, closed, closedAt, model, needsAgentSelection, mode }) => ({ id, name, root,
-    provider: provider === 'vscode' ? ['codex', 'claude', 'ollama'].includes(nativeAgent) ? nativeAgent : 'terminal' : provider,
+  }).map(({ id, name, root, provider, nativeAgent, closed, closedAt, model, needsAgentSelection, mode, access }) => {
+    const agent = provider === 'vscode' ? ['codex', 'claude', 'ollama'].includes(nativeAgent) ? nativeAgent : 'terminal' : provider;
+    const apiKey = agent === 'claude' && access === 'apiKey' && mode !== 'terminal';
+    return { id, name, root, provider: agent,
     ...(closed === true ? { closed: true, ...(Number.isFinite(closedAt) ? { closedAt } : {}) } : {}),
-    ...(mode === 'terminal' || provider === 'terminal' ? { mode: 'terminal' } : {}),
+    ...(apiKey ? { access: 'apiKey' } : {}),
+    // Claude chats without the user's API key run the official Claude Code CLI in a terminal.
+    ...(mode === 'terminal' || provider === 'terminal' || (agent === 'claude' && !apiKey) ? { mode: 'terminal' } : {}),
     ...(typeof model === 'string' && model && !/[\x00\r\n]/u.test(model) && !model.startsWith('-') ? { model } : {}),
-    ...(needsAgentSelection === true || provider === 'vscode' && !['codex', 'claude', 'ollama'].includes(nativeAgent) ? { needsAgentSelection: true } : {}) }));
+    ...(needsAgentSelection === true || provider === 'vscode' && !['codex', 'claude', 'ollama'].includes(nativeAgent) ? { needsAgentSelection: true } : {}) };
+  });
 }
 module.exports = { MAX_MARKDOWN_BYTES, fingerprint, inside, resolveEntry, listDirectory, readMarkdown, restoreSessions };

@@ -5,7 +5,7 @@ Fecha de revisión: 16 de noviembre de 2026. Alcance: fuentes de esta variante y
 ## Decisiones aplicadas
 
 1. Se conserva el texto MIT original en LICENSE.
-2. No se redistribuyen el SDK, ejecutable, interfaz, logos ni credenciales de Anthropic. El chat invoca un comando de la extensión oficial instalada por el usuario. Las sesiones de terminal opcionales ejecutan el CLI oficial instalado por el usuario, sin modificarlo ni distribuirlo. No se restringen sus métodos de autenticación.
+2. No se redistribuyen el SDK, ejecutable, interfaz, logos ni credenciales de Anthropic. Los chats y las terminales de Claude ejecutan Claude Code instalado por el usuario por separado o incluido en la extensión oficial, sin modificarlo ni distribuirlo. En el modo suscripción el usuario inicia sesión mediante el flujo de Anthropic dentro de Claude Code y no se restringen sus métodos de autenticación. La extensión no ofrece el inicio de sesión de Claude.ai, no intermedia credenciales de suscripción y no usa sus límites. El chat propio usa solo la clave de API que configura el usuario, como exige la documentación de Anthropic para productos de terceros.
 3. No se consultan cuotas de Claude ni de Codex ni se inyectan indicadores en sus interfaces oficiales.
 4. No se redistribuyen Codex, Ollama, bibliotecas de GPU ni pesos de modelos. El usuario los instala bajo sus propios acuerdos.
 5. Los cuatro iconos de estado importados se han sustituido por geometría SVG original; no se usa el paquete de iconos de terceros de la variante anterior. Los demás iconos son formas geométricas del código base MIT; se conserva su aviso.
@@ -17,6 +17,10 @@ Fecha de revisión: 16 de noviembre de 2026. Alcance: fuentes de esta variante y
 - Integración oficial de VS Code y comandos: https://code.claude.com/docs/en/vs-code
 - Términos comerciales de Anthropic: https://www.anthropic.com/legal/commercial-terms
 - Licencias de las versiones concretas redistribuidas: archivos locales en licenses/ e inventario DEPENDENCY-LICENSES.json, obtenidos de los paquetes instalados con el lockfile.
+
+## Revalidación de la versión 0.1.48
+
+El menú de AI Agents abre el panel oficial de Claude Code para la suscripción o el panel propio con clave de API. El panel propio ejecuta Claude Code con `--bare` y valida que se use `ANTHROPIC_API_KEY`.
 
 ## Límites y comprobaciones antes de distribución pública
 

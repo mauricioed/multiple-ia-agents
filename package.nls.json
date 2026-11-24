@@ -1,5 +1,5 @@
 {
-    "extension.description": "Manage Codex and Ollama chats, open the official Claude Code chat, and run agent terminals in VS Code.",
+    "extension.description": "Manage Codex, Ollama and Claude chats, open Claude Code with your subscription in each chat folder, and run agent terminals in VS Code.",
     "ui.1": "New chat",
     "ui.2": "Show AI Agents (no usage meters)",
     "ui.3": "Refresh chat files",
@@ -17,5 +17,9 @@
     "ui.17": "New chat with agent",
     "ui.18": "New terminal with agent",
     "ui.19": "Shell (no agent)",
-    "ui.20": "Optional path to your separately installed Claude executable, used only for terminal sessions."
+    "ui.20": "Optional path to your separately installed Claude Code executable. If empty, the PATH or the official Claude Code extension is used.",
+    "ui.21": "Set Anthropic API key for Claude chats",
+    "ui.22": "Remove Anthropic API key",
+    "ui.23": "Claude with API key",
+    "ui.24": "Official Claude Code"
 }

@@ -16,8 +16,8 @@
       const file=path.join(directory,name+suffix);if(await isFile(file))return file;
     }
   }
-  async function resolveCli(provider,configured='',dirs=directories(),terminalMode=false){
-    if(!['codex','ollama'].includes(provider)&&!(terminalMode&&provider==='claude'))throw new Error(t('Claude utiliza exclusivamente su extension oficial.'));
+  async function resolveCli(provider,configured='',dirs=directories(),terminalMode=false,fallback){
+    if(!['codex','ollama'].includes(provider)&&!(terminalMode&&provider==='claude'))throw new Error(t('Agente no disponible.'));
     if(configured){
       if(!path.isAbsolute(configured)||!await isFile(configured))throw new Error(t('Configura una ruta absoluta a un ejecutable instalado.'));
       if(/\.(cmd|bat|ps1)$/iu.test(configured))throw new Error(t('Selecciona el ejecutable nativo o la entrada JavaScript, no un script de shell.'));
@@ -41,6 +41,8 @@
         const node=await executable('node',dirs);if(node)return{shellPath:node,shellArgs:[entry]};
       } else if(process.platform==='win32'?/\.(exe|com)$/iu.test(entry):!path.extname(entry))return{shellPath:entry,shellArgs:[]};
     }
+    // Unmodified Claude Code binary shipped by the official VS Code extension.
+    if(provider==='claude'&&fallback&&path.isAbsolute(fallback)&&await isFile(fallback))return{shellPath:fallback,shellArgs:[]};
     if(provider==='codex')for(const directory of dirs){
       const entry=path.join(directory,'node_modules','@openai','codex','bin','codex.js');
       const node=await executable('node',dirs);if(node&&await isFile(entry))return{shellPath:node,shellArgs:[entry]};
@@ -78,8 +80,8 @@ async function pullOllamaModel(model, configured, signal, progress = () => {}) {
   buffer += decoder.decode(); if (buffer.trim()) consume(buffer);
   if (!complete) throw new Error(t('La descarga del modelo de Ollama no ha terminado.'));
 }
-async function agentInvocation(session, configured = '') {
-  const invocation = await resolveCli(session.provider, configured, directories(), true);
+async function agentInvocation(session, configured = '', fallback) {
+  const invocation = await resolveCli(session.provider, configured, directories(), true, fallback);
   invocation.shellArgs.push(...permissionArguments(session.provider, session.permission));
   if (session.provider === 'ollama') {
     const endpoint = await ollamaEndpoint(configured);

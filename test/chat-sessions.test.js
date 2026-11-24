@@ -15,7 +15,7 @@ Module._load = load;
 async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gui-chats-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
-  const data = { sessions: [{ id: 'first', name: 'First', root, provider: 'codex', backendId: 'saved-thread', permission: 'read' }, { id: 'second', name: 'Second', root, provider: 'claude' }] };
+  const data = { sessions: [{ id: 'first', name: 'First', root, provider: 'codex', backendId: 'saved-thread', permission: 'read' }, { id: 'second', name: 'Second', root, provider: 'claude', access: 'apiKey' }] };
   const context = { globalStorageUri: { fsPath: path.join(root, 'history') }, globalState: { get: (key, fallback) => data[key] ?? fallback, update: async (key, value) => { data[key] = structuredClone(value); } } };
   const manager = new ChatSessions(context); return { root, context, manager, session: manager.session('first') };
 }
@@ -214,8 +214,12 @@ test('new chat asks only for its folder, persists and opens immediately without 
   assert.equal(created.provider, 'codex');
   assert.equal(new ChatSessions(f.context).session(created.id).root, created.root);
   f.manager.activeId = 'second';
+  f.manager.claudeKey = { ensure: async () => 'configured-key' };
   await f.manager.createSession();
-  assert.equal(f.manager.session(f.manager.activeId).provider, 'claude');
+  const claude = f.manager.session(f.manager.activeId);
+  assert.equal(claude.provider, 'claude');
+  assert.equal(claude.access, 'apiKey');
+  assert.deepEqual(calls, ['folder', 'open', 'folder', 'open']);
 });
 
 test('generated names ignore closed chats and remove obsolete suffixes after closing and restoring', async t => {
@@ -270,15 +274,133 @@ test('explicit new chat provider overrides active agent and invalid providers do
   const f = await fixture(t);
   f.manager.activeId = 'first';
   f.manager.pickFolder = async () => f.root;
-  f.manager.showTerminal = async () => false;
-  await f.manager.createSession('claude');
-  assert.equal(f.manager.activeId, 'first');
-  assert.equal(f.manager.sessions.length, 2);
   f.manager.showTerminal = async () => true;
+  let key;
+  f.manager.claudeKey = { ensure: async () => key };
+  f.manager.createTerminalSession = async () => assert.fail('Creating Claude chat must never open a terminal');
+  await f.manager.createSession('claude');
+  assert.equal(f.manager.activeId, 'first', 'cancelling the API key prompt creates no chat');
+  assert.equal(f.manager.sessions.length, 2);
+  key = 'configured-key';
   await f.manager.createSession('claude');
   assert.equal(f.manager.session(f.manager.activeId).provider, 'claude');
+  assert.equal(f.manager.session(f.manager.activeId).access, 'apiKey');
   f.manager.pickFolder = async () => assert.fail('Invalid provider must not open the folder picker');
   await assert.rejects(f.manager.createSession('unknown-agent'), /Agente no disponible/);
+});
+
+test('the official Claude action registers the new tab and its workspace folder', async t => {
+  const f = await fixture(t);
+  const { extensions, commands } = fake;
+  const { tabGroups } = fake.window;
+  const { workspaceFolders } = fake.workspace;
+  t.after(() => { Object.assign(fake, { extensions, commands }); fake.window.tabGroups = tabGroups; fake.workspace.workspaceFolders = workspaceFolders; });
+  const root = await fs.realpath(f.root);
+  fake.workspace.workspaceFolders = [{ uri: { scheme: 'file', fsPath: root } }];
+  const group = { tabs: [], viewColumn: 1 };
+  const newTab = () => ({ input: { viewType: 'mainThreadWebview-claudeVSCodePanel' }, group });
+  const opened = [];
+  fake.window.tabGroups = { all: [group], activeTabGroup: group, close: async closed => group.tabs.includes(closed) };
+  const calls = [];
+  fake.extensions = { getExtension: id => {
+    assert.equal(id, 'anthropic.claude-code');
+    return { activate: async () => calls.push('activate') };
+  } };
+  fake.commands = {
+    getCommands: async () => ['claude-vscode.primaryEditor.open'],
+    executeCommand: async (...args) => {
+      calls.push(args);
+      if (args[0] === 'claude-vscode.primaryEditor.open') {
+        const tab = newTab();
+        opened.push(tab);
+        group.tabs.push(tab);
+      }
+      if (args[0] === 'workbench.action.openEditorAtIndex') group.activeTab = group.tabs[args[1]];
+    }
+  };
+  f.manager.pickFolder = async defaultPath => { assert.equal(defaultPath, f.session.root); return root; };
+  f.manager.createTerminalSession = async () => assert.fail('Native access must open a chat');
+  const replies = [];
+  const panel = { webview: { postMessage: reply => replies.push(reply) } };
+  f.manager.panels.set(f.session.id, panel);
+  await f.manager.handleChat(f.session, panel, { action: 'openOfficialClaude', requestId: 1 });
+  assert.deepEqual(calls, ['activate', ['claude-vscode.primaryEditor.open'], ['workbench.action.closeAuxiliaryBar'],
+    ['multipleIAAgents.explorer.focus', { preserveFocus: true }], ['workbench.action.openEditorAtIndex', 0],
+    ['workbench.action.keepEditor']]);
+  assert.equal(replies.at(-1).result, true);
+  const session = f.manager.session(f.manager.activeId);
+  assert.equal(session.root, root);
+  assert.equal(session.access, 'official');
+  assert.equal(f.manager.officialTabs.get(session.id), opened[0]);
+  assert.equal(await f.manager.openOfficialClaude(root), true);
+  const second = f.manager.session(f.manager.activeId);
+  assert.notEqual(second.id, session.id);
+  assert.notEqual(second.name, session.name);
+  assert.equal(f.manager.officialTabs.get(second.id), opened[1]);
+  assert.equal(group.activeTab, opened[1]);
+  await f.manager.selectSession(session.id, true, 1);
+  assert.deepEqual(calls.at(-1), ['workbench.action.openEditorAtIndex', 0]);
+  assert.equal(new ChatSessions(f.context).sessions.some(item => item.id === session.id), false);
+  await f.manager.closeSession(session.id);
+  assert.equal(f.manager.sessions.some(item => item.id === session.id), false);
+  assert.equal(f.manager.officialTabs.get(second.id), opened[1]);
+  await f.manager.closeSession(second.id);
+
+  calls.length = 0;
+  f.manager.pickFolder = async () => undefined;
+  assert.equal(await f.manager.openOfficialClaude(), false);
+  assert.deepEqual(calls, []);
+
+  const previousUri = fake.Uri;
+  fake.Uri = { file: fsPath => ({ scheme: 'file', fsPath }) };
+  t.after(() => { fake.Uri = previousUri; });
+  const other = path.join(root, 'other');
+  await fs.mkdir(other);
+  f.manager.pickFolder = async () => other;
+  assert.equal(await f.manager.openOfficialClaude(), true);
+  assert.deepEqual(calls, [['vscode.openFolder', fake.Uri.file(other), { forceReuseWindow: true }]]);
+  assert.equal(f.manager.officialTabs.size, 0);
+
+  fake.workspace.workspaceFolders = [{ uri: fake.Uri.file(other) }];
+  const destination = new ChatSessions(f.context);
+  destination.pickFolder = async () => assert.fail('The destination already has the chosen folder');
+  group.tabs.length = 0;
+  await destination.restoreOfficialClaudeLaunch();
+  const transferred = destination.session(destination.activeId);
+  assert.equal(transferred.root, other);
+  assert.equal(destination.officialTabs.get(transferred.id), opened[2]);
+  await destination.restoreOfficialClaudeLaunch();
+  assert.equal(destination.officialTabs.size, 1);
+
+  const codexTab = { input: { viewType: 'openai.chat' }, group };
+  group.tabs.push(codexTab);
+  group.activeTab = codexTab;
+  const restored = new ChatSessions(f.context);
+  await f.context.globalState.update(restored.officialClaudeLaunchKey(other), Date.now());
+  calls.length = 0;
+  await Promise.all([restored.restoreOfficialClaudeLaunch(), restored.restoreOfficialClaudeLaunch()]);
+  assert.equal(calls.filter(call => call[0] === 'claude-vscode.primaryEditor.open').length, 1);
+  assert.equal(restored.officialTabs.size, 2);
+  assert.equal(restored.officialTabs.get(restored.activeId), opened[3]);
+  assert.deepEqual(group.tabs, [opened[2], codexTab, opened[3]]);
+
+  const key = destination.officialClaudeLaunchKey(other);
+  await f.context.globalState.update(key, Date.now() - 6 * 60 * 1000);
+  const callsBeforeExpiry = calls.length;
+  await destination.restoreOfficialClaudeLaunch();
+  assert.equal(calls.length, callsBeforeExpiry);
+  assert.equal(f.context.globalState.get(key), undefined);
+
+  fake.workspace.workspaceFolders = undefined;
+  calls.length = 0;
+  assert.equal(await f.manager.openOfficialClaude(), true);
+  assert.deepEqual(calls, [['vscode.openFolder', fake.Uri.file(other), { forceReuseWindow: true }]]);
+
+  const executeCommand = fake.commands.executeCommand;
+  fake.commands.executeCommand = async () => { throw new Error('Could not open folder'); };
+  await assert.rejects(f.manager.openOfficialClaude(), /Could not open folder/);
+  assert.equal(f.context.globalState.get(key), undefined);
+  fake.commands.executeCommand = executeCommand;
 });
 
 test('Ollama opens without models and leaves download as an explicit user action', async t => {
@@ -687,4 +809,37 @@ test('vault status reports a clean confirmed commit and local changes without co
   await fs.writeFile(path.join(root, 'tracked.md'), '# Original');
   await fs.writeFile(path.join(root, 'Export.MARKDOWN'), '# Conversation');
   assert.equal(await vault.syncStatus(root), 'pending');
+});
+
+test('Claude chats from the official panel migrate to Claude Code terminals and API chats keep their panel', async t => {
+  const f = await fixture(t);
+  const legacy = { id: 'legacy', name: 'Claude · old', root: f.root, provider: 'claude' };
+  await f.context.globalState.update('sessions', [...f.manager.sessions, legacy]);
+  const restored = new ChatSessions(f.context);
+  assert.equal(restored.session('legacy').mode, 'terminal');
+  assert.equal(restored.session('legacy').access, undefined);
+  assert.equal(restored.session('second').mode, undefined);
+  assert.equal(restored.session('second').access, 'apiKey');
+  assert.equal(restored.supportsVaultChat(restored.session('legacy')), false);
+  assert.equal(restored.supportsVaultChat(restored.session('second')), true);
+  assert.throws(() => restored.getBackend(restored.session('legacy')), /Claude Code/);
+});
+
+test('Claude API chats never open a Claude Code terminal and removing the key stops their processes', async t => {
+  const f = await fixture(t);
+  const second = f.manager.session('second');
+  const replies = [];
+  const panel = { webview: { postMessage: value => { if (value.type === 'reply') replies.push(value); } } };
+  f.manager.panels.set(second.id, panel);
+  await f.manager.handleChat(second, panel, { action: 'terminal', requestId: 1 });
+  assert.match(replies[0].error, /suscripción/);
+  let disposed = 0; let removed = false;
+  f.manager.backends.set(second.id, { dispose: () => disposed++, stop: async () => {} });
+  f.manager.claudeKey = { remove: async () => { removed = true; } };
+  const notices = []; const original = fake.window.showInformationMessage;
+  t.after(() => { fake.window.showInformationMessage = original; });
+  fake.window.showInformationMessage = message => notices.push(message);
+  await f.manager.removeClaudeKey();
+  assert.equal(removed, true); assert.equal(disposed, 1); assert.equal(f.manager.backends.has(second.id), false);
+  assert.equal(notices.length, 1);
 });

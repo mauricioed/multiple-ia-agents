@@ -1,3 +1,16 @@
+## 0.1.53
+
+- Keep the current VS Code window when changing folders for Claude Code and reuse a restored official tab.
+
+## 0.1.52
+
+- Ask for a folder before opening Claude Code and list the new chat in AI Agents in the window that hosts it.
+
+## 0.1.48
+
+- Open Claude chats with your subscription in Claude Code, in the active editor group and the chat folder. Each chat resumes its own conversation.
+- Add a Claude chat panel that uses your own Anthropic API key, since Anthropic does not allow subscription sign-in in third-party extensions.
+
 ## 0.1.47
 
 - Update the version badge and document the current chat history, GitHub Markdown Vault, and message queue in the extension overview.

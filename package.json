@@ -2,7 +2,7 @@
     "name": "multiple-ia-agents",
     "displayName": "Multiple AI Agent Chats",
     "description": "%extension.description%",
-    "version": "0.1.47",
+    "version": "0.1.55",
     "publisher": "Mauricio",
     "icon": "media/icon.png",
     "engines": {
@@ -92,7 +92,12 @@
             },
             {
                 "command": "multipleIAAgents.new.claude",
-                "title": "Claude",
+                "title": "%ui.23%",
+                "category": "Multiple AI Agent Chats"
+            },
+            {
+                "command": "multipleIAAgents.new.claudeNative",
+                "title": "%ui.24%",
                 "category": "Multiple AI Agent Chats"
             },
             {
@@ -131,6 +136,16 @@
                 "title": "%ui.19%",
                 "category": "Multiple AI Agent Chats",
                 "icon": "$(terminal)"
+            },
+            {
+                "command": "multipleIAAgents.claudeApiKey.set",
+                "title": "%ui.21%",
+                "category": "Multiple AI Agent Chats"
+            },
+            {
+                "command": "multipleIAAgents.claudeApiKey.remove",
+                "title": "%ui.22%",
+                "category": "Multiple AI Agent Chats"
             }
         ],
         "viewsContainers": {
@@ -192,6 +207,10 @@
                     "when": "false"
                 },
                 {
+                    "command": "multipleIAAgents.new.claudeNative",
+                    "when": "false"
+                },
+                {
                     "command": "multipleIAAgents.new.ollama",
                     "when": "false"
                 },
@@ -230,8 +249,12 @@
                     "group": "agents@1"
                 },
                 {
+                    "command": "multipleIAAgents.new.claudeNative",
+                    "group": "agents@3"
+                },
+                {
                     "command": "multipleIAAgents.new.ollama",
-                    "group": "agents@2"
+                    "group": "agents@4"
                 }
             ],
             "multipleIAAgents.newTerminals": [
@@ -310,6 +333,7 @@
         "anthropic.claude-code"
     ],
     "activationEvents": [
+        "onStartupFinished",
         "onWebviewPanel:multipleIAAgents.chat"
     ],
     "overrides": {

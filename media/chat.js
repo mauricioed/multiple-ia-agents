@@ -65,8 +65,13 @@ function setAgentMenu(open, restoreFocus = true) {
   agentMenu.hidden = !open; agentMenuToggle.setAttribute('aria-expanded', String(open));
   if (open) agentMenu.querySelector('button')?.focus(); else if (restoreFocus) agentMenuToggle.focus();
 }
-for (const name of ['Codex', 'Claude', 'Ollama']) {
-  const item = button(name, t('Nuevo chat con ') + name, async () => { setAgentMenu(false); await rpc('new', { provider: name.toLowerCase() }); });
+for (const [name, action] of [
+  ['Codex', () => rpc('new', { provider: 'codex' })],
+  [t('Claude con clave de API'), () => rpc('new', { provider: 'claude' })],
+  [t('Claude Code oficial'), () => rpc('openOfficialClaude')],
+  ['Ollama', () => rpc('new', { provider: 'ollama' })]
+]) {
+  const item = button(name, t('Nuevo chat con ') + name, async () => { setAgentMenu(false); await action(); });
   item.replaceChildren(document.createTextNode(name)); item.setAttribute('role', 'menuitem'); item.tabIndex = -1;
   agentMenu.append(item);
 }
@@ -86,7 +91,10 @@ agentMenu.addEventListener('keydown', event => {
 document.addEventListener('pointerdown', event => { if (!newChatControl.contains(event.target)) setAgentMenu(false, false); });
 window.addEventListener('blur', () => setAgentMenu(false, false));
 newChatControl.append(newChatButton, agentMenuToggle, agentMenu);
-controls.append(button('▣', t('Abrir terminal del agente'), () => rpc('terminal'), 'terminal-button'), newChatControl, button('×', t('Cerrar sesión'), () => rpc('close')));
+const terminalButton = button('▣', t('Abrir terminal del agente'), () => rpc('terminal'), 'terminal-button');
+const claudeKeyButton = button('🔑', t('Configurar clave de API de Anthropic'), () => rpc('claudeApiKey'), 'terminal-button');
+claudeKeyButton.replaceChildren(document.createTextNode('🔑')); claudeKeyButton.hidden = true;
+controls.append(claudeKeyButton, terminalButton, newChatControl, button('×', t('Cerrar sesión'), () => rpc('close')));
 const chatHistory = el('div', undefined, 'chat-history');
 const historyPopup = el('nav', undefined, 'history-entries');
 historyPopup.id = 'closed-chat-history';
@@ -506,13 +514,14 @@ function render() {
   const session = state.session;
   remember();
   agent.value = session.provider; pathLabel.textContent = session.root; pathLabel.title = session.root;
+  claudeKeyButton.hidden = session.provider !== 'claude'; terminalButton.hidden = session.provider === 'claude';
   permission.options[3].textContent = session.provider === 'codex' ? t('\u2699\uFE0F Personalizado (config.toml)') : t('\u2699\uFE0F Personalizado (configuraci\u00f3n)');
   const legacyPermission = permission.querySelector('option[value="read"]');
   if (session.permission === 'read' && !legacyPermission) permission.append(option(session.provider === 'claude' ? t('\uD83D\uDCCB Modo de planificaci\u00f3n') : t('\uD83D\uDC41\uFE0F Solo lectura'), 'read'));
   else if (session.permission !== 'read') legacyPermission?.remove();
   permission.title = session.provider === 'ollama' ? t('Ollama no utiliza herramientas de ejecuci\u00f3n en esta extensi\u00f3n.') : ({
     ask: t('Solicita aprobaci\u00f3n cuando una acci\u00f3n lo requiere.'),
-    auto: t('El revisor nativo aprueba o rechaza las acciones y consulta cuando es necesario.'),
+    auto: session.provider === 'claude' ? t('Acepta las ediciones de archivos y pide aprobación para el resto de acciones.') : t('El revisor nativo aprueba o rechaza las acciones y consulta cuando es necesario.'),
     full: t('Permite acceder fuera de la carpeta y a Internet sin pedir aprobaci\u00f3n, sujeto a las pol\u00edticas del proveedor.'),
     custom: t('Utiliza los permisos de la configuraci\u00f3n nativa del agente.')
   }[session.permission || 'ask'] || t('Permisos para las acciones del agente'));
@@ -574,7 +583,8 @@ function render() {
   welcome.hidden = state.messages.length > 0;
   if (state.notice) notice.textContent = state.notice;
   else if (state.running) notice.replaceChildren(chatIcon('chatGradient'), el('span', t('{0} está escribiendo…', agentName(session.provider))));
-  else notice.textContent = session.provider === 'ollama' ? (session.model ? t('Los modelos con herramientas pueden leer archivos de texto de la carpeta del chat.') : t('Inicia Ollama y pulsa Descargar modelo para instalar tu primer modelo local.')) : '';
+  else notice.textContent = session.provider === 'ollama' ? (session.model ? t('Los modelos con herramientas pueden leer archivos de texto de la carpeta del chat.') : t('Inicia Ollama y pulsa Descargar modelo para instalar tu primer modelo local.'))
+    : session.provider === 'claude' ? t('Anthropic no permite iniciar sesión con la suscripción de Claude en extensiones de terceros. Este chat usa tu clave de API.') : '';
   const prompts = JSON.stringify(state.approvals);
   if (prompts !== lastApprovals) {
     approvals.replaceChildren(); lastApprovals = prompts;

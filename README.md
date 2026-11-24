@@ -1,10 +1,10 @@
 # Multiple AI Agent Chats
 
-![VS Code ^1.145.0](https://img.shields.io/badge/VS%20Code-%5E1.145.0-4377bd) ![Version 0.1.47](https://img.shields.io/badge/version-0.1.47-655bd5) [![MIT License](https://img.shields.io/badge/license-MIT-56964d)](LICENSE)
+![VS Code ^1.145.0](https://img.shields.io/badge/VS%20Code-%5E1.145.0-4377bd) ![Version 0.1.55](https://img.shields.io/badge/version-0.1.55-655bd5) [![MIT License](https://img.shields.io/badge/license-MIT-56964d)](LICENSE)
 
 Manage Codex, Claude Code, and Ollama from the **AI Agents** sidebar in VS Code. Each chat or terminal can use a different local folder. Selecting a session also switches the file explorer to its folder.
 
-**Español.** Gestiona chats de Codex y Ollama, abre el chat oficial de Claude Code y ejecuta terminales de agentes en VS Code.
+**Español.** Gestiona chats de Codex, Ollama y Claude, abre Claude Code con tu suscripción en la carpeta de cada chat y ejecuta terminales de agentes en VS Code.
 
 This project is independent of OpenAI, Anthropic, and Ollama.
 
@@ -20,9 +20,14 @@ Open independent chats with local history, attach files, and choose a permission
 
 ## Claude Code
 
-Open the official Claude Code chat from **AI Agents**. VS Code installs the official extension as a dependency. The Anthropic extension handles authentication, permissions, billing, and history. Multiple sidebar entries can point to the same Claude tab and close when that tab closes. [Claude Code extension](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code)
+When you create a Claude chat, choose how to access Claude:
 
-For terminal sessions, install the official Claude CLI and sign in. The extension detects native and global npm installations, including Node.js version managers. If detection fails, set `multipleIAAgents.executables.claude`. JavaScript entry points require Node.js on `PATH`.
+- **Official Claude Code.** Opens Anthropic's own chat panel after you select a folder, then adds it to the AI Agents chat list in the window that hosts it. If the selected folder differs from the first workspace folder, VS Code loads it in the current window and reuses an official Claude tab if one was restored. Claude Code manages its own conversation history. Sign in inside the official panel. Install and enable the Claude Code extension to use this option.
+- **Claude with an API key.** Uses this extension's chat panel, with attachments, permission modes, and local history, like Codex and Ollama. Anthropic does not allow third-party extensions to offer Claude.ai sign-in or use subscription limits, so this chat uses your own Anthropic API key. Usage is billed to your API account. The key is stored encrypted in VS Code's secret storage. Claude Code runs in `--bare` mode, which only accepts that key. Use **Set Anthropic API key** or **Remove Anthropic API key** from the Command Palette to manage it.
+
+The official [Claude Code extension](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code) is installed as a dependency and provides the Claude Code executable when it is not installed separately.
+
+For terminal sessions, install the official Claude CLI or the Claude Code extension and sign in. The extension detects native and global npm installations, including Node.js version managers. If detection fails, set `multipleIAAgents.executables.claude`. JavaScript entry points require Node.js on `PATH`.
 
 ## Ollama
 
@@ -67,12 +72,13 @@ Agent terminals use the installed provider CLIs. The Ollama terminal uses an ins
 
 - **Executable unavailable.** Install the official CLI and check its configured path. Use a native executable or JavaScript entry point. Files ending in `.cmd`, `.bat`, or `.ps1` are shell wrappers.
 - **Ollama terminal fails to start.** Make sure Ollama is installed and run `ollama list` to verify that a model is available.
-- **Claude terminal fails to start.** Make sure the Claude CLI is installed and signed in. The official chat uses the Anthropic extension.
+- **Claude terminal fails to start.** Make sure Claude Code is installed and signed in.
+- **Claude API chat reports an invalid key.** Run **Set Anthropic API key** and enter a key from the Claude Console.
 - **Controls are missing after an update.** Run **Developer: Reload Window** from the Command Palette.
 
 ## Privacy and permissions
 
-Codex and Ollama chat history, session names, and folder paths are stored locally in VS Code's extension storage. The extension operates without telemetry. Each provider handles its own authentication.
+Codex, Ollama, and Claude API chat history, session names, and folder paths are stored locally in VS Code's extension storage. The extension operates without telemetry. Each provider handles its own authentication.
 
 Messages and selected attachments are sent to your chat provider. Codex can run commands or edit files according to the selected permission mode. [Privacy policy](PRIVACY.md)
 

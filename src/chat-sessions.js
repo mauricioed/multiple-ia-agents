@@ -4,12 +4,13 @@ const vscode = require('vscode');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fileURLToPath } = require('node:url');
-const { randomUUID, randomBytes } = require('node:crypto');
+const { randomUUID, randomBytes, createHash } = require('node:crypto');
 const MarkdownIt = require('markdown-it');
 const { TerminalSessions } = require('./terminal-sessions');
 const core = require('./core');
 const { backend } = require('./backends');
-const { openOfficialClaude, OfficialClaudeTabs } = require('./official-claude');
+const { ClaudeApiBackend, ClaudeApiKey } = require('./claude-api');
+const claudeCli = require('./claude-cli');
 const { MODES, permissionMode } = require('./permissions');
 const MAX_CONTEXT = 128 * 1024;
 const MAX_IMAGE = 5 * 1024 * 1024;
@@ -36,13 +37,24 @@ class ChatSessions extends TerminalSessions {
     }
     this.panelReady = new WeakMap(); this.panelBindings = new WeakMap(); this.vaultFolders = new WeakMap();
     this.panels = new Map(); this.backends = new Map(); this.histories = new Map(); this.running = new Map(); this.messageQueues = new Map(); this.approvals = new Map(); this.writes = Promise.resolve();
-    this.officialTabs = new OfficialClaudeTabs(vscode, id => this.closeSession(id), error => this.log(error.message));
+    this.claudeKey = new ClaudeApiKey(context.secrets, vscode.window);
+    this.officialTabs = new Map();
+    const tabs = vscode.window.tabGroups;
+    this.officialTabSubscriptions = [
+      tabs?.onDidChangeTabs?.(event => {
+        for (const [id, tab] of this.officialTabs) {
+          if (event.closed.includes(tab)) this.removeOfficialChat(id);
+        }
+        this.syncOfficialChat();
+      }),
+      tabs?.onDidChangeTabGroups?.(() => this.syncOfficialChat())
+    ];
     this.normalizeSessionNames();
   }
   normalizeSessionNames() {
     const groups = new Map();
     for (const session of this.sessions.filter(item => !item.closed)) {
-      const label = { codex: 'Codex', claude: 'Claude', ollama: 'Ollama' }[session.provider];
+      const label = { codex: 'Codex', claude: 'Claude API', ollama: 'Ollama' }[session.provider];
       if (!label || session.mode === 'terminal') continue;
       const base = `${label} · ${path.basename(session.root) || session.root}`;
       const suffix = session.name.startsWith(base) ? session.name.slice(base.length) : undefined;
@@ -57,23 +69,153 @@ class ChatSessions extends TerminalSessions {
   }
   async persist() {
     this.normalizeSessionNames();
-    return super.persist();
+    const sessions = this.sessions.filter(session => session.access !== 'official');
+    const active = sessions.find(session => session.id === this.activeId) || sessions.find(session => !session.closed);
+    return super.persist(sessions, active?.id ?? null);
   }
   async pickAgent() {
     return vscode.window.showQuickPick([
       { label: 'Codex', provider: 'codex', description: t('Chat con herramientas de Codex y tu acceso del CLI') },
-      { label: 'Claude', provider: 'claude', description: t('Claude Code: requiere acceso configurado') },
+      { label: 'Claude', provider: 'claude', description: t('Claude Code con tu suscripción o chat con tu clave de API') },
       { label: 'Ollama', provider: 'ollama', description: t('Conversación local; sin ejecución de herramientas') }
     ], { title: t('Agente del nuevo chat') });
   }
+  async openOfficialClaude(defaultPath) {
+    const extension = this.requireOfficialClaude();
+    if (this.openingOfficialChat) return false;
+    this.openingOfficialChat = true;
+    try {
+      const root = await this.pickFolder(defaultPath);
+      if (!root) return false;
+      const first = vscode.workspace.workspaceFolders?.[0]?.uri;
+      const primary = first?.scheme === 'file' && await fs.realpath(first.fsPath).catch(() => undefined);
+      if (primary && !path.relative(primary, root)) return await this.launchOfficialClaude(extension, root);
+
+      const key = this.officialClaudeLaunchKey(root);
+      await this.context.globalState.update(key, Date.now());
+      try {
+        await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(root), { forceReuseWindow: true });
+      } catch (error) {
+        await this.context.globalState.update(key, undefined);
+        throw error;
+      }
+      return true;
+    } finally { this.openingOfficialChat = false; }
+  }
+
+  officialClaudeLaunchKey(root) {
+    const normalized = process.platform === 'win32' ? root.toLowerCase() : root;
+    return 'officialClaudeLaunch.' + createHash('sha256').update(normalized).digest('hex');
+  }
+
+  async restoreOfficialClaudeLaunch() {
+    const first = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (first?.scheme !== 'file') return;
+    const root = await fs.realpath(first.fsPath).catch(() => undefined);
+    if (!root) return;
+    if (this.openingOfficialChat) return;
+    this.openingOfficialChat = true;
+    try {
+      const key = this.officialClaudeLaunchKey(root);
+      const requested = this.context.globalState.get(key);
+      if (!Number.isFinite(requested)) return;
+      await this.context.globalState.update(key, undefined);
+      if (Date.now() - requested > 5 * 60 * 1000) return;
+      await this.launchOfficialClaude(this.requireOfficialClaude(), root, true);
+    } finally { this.openingOfficialChat = false; }
+  }
+
+  requireOfficialClaude() {
+    const extension = vscode.extensions.getExtension('anthropic.claude-code');
+    if (!extension) throw new Error(t('Instala y habilita Claude Code de Anthropic para abrir su chat oficial.'));
+    return extension;
+  }
+
+  async launchOfficialClaude(extension, root, reuseRestored = false) {
+    await extension.activate();
+    const groups = vscode.window.tabGroups;
+    const currentTabs = () => groups.all.flatMap(group => group.tabs);
+    const isClaude = tab => /(?:^|-)claudeVSCodePanel$/iu.test(tab?.input?.viewType || '');
+    if (reuseRestored) {
+      for (const tab of currentTabs().filter(isClaude)) this.registerOfficialChat(tab, root);
+    }
+    const commands = await vscode.commands.getCommands(true);
+    const command = ['claude-vscode.primaryEditor.open', 'claude-vscode.editor.open'].find(id => commands.includes(id));
+    if (!command) throw new Error(t('Actualiza la extensión oficial de Claude y recarga VS Code.'));
+    const before = new Set(currentTabs());
+    await vscode.commands.executeCommand(command);
+    let tab;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      tab = currentTabs().find(item => !before.has(item) && isClaude(item));
+      if (tab) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    if (!tab) throw new Error(t('No se pudo identificar la pestaña nueva de Claude Code.'));
+
+    const session = this.registerOfficialChat(tab, root);
+    this.activeId = session.id;
+    this.publish();
+    await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
+    await vscode.commands.executeCommand('multipleIAAgents.explorer.focus', { preserveFocus: true });
+    await this.focusOfficialChat(session.id);
+    await vscode.commands.executeCommand('workbench.action.keepEditor');
+    return true;
+  }
+
+  registerOfficialChat(tab, root) {
+    const existing = [...this.officialTabs].find(([, registered]) => registered === tab);
+    if (existing) return this.sessions.find(session => session.id === existing[0]);
+    const base = 'Claude Code · ' + (path.basename(root) || root);
+    let name = base;
+    for (let index = 2; this.sessions.some(session => !session.closed && session.name === name); index++) name = base + ' (' + index + ')';
+    const session = { id: randomUUID(), name, provider: 'claude', root, access: 'official' };
+    this.officialTabs.set(session.id, tab);
+    this.sessions.push(session);
+    return session;
+  }
+
+  syncOfficialChat() {
+    const active = vscode.window.tabGroups.activeTabGroup.activeTab;
+    const entry = [...this.officialTabs].find(([, tab]) => tab === active);
+    if (entry && this.activeId !== entry[0]) {
+      this.activeId = entry[0];
+      this.publish();
+    }
+  }
+
+  removeOfficialChat(id) {
+    this.officialTabs.delete(id);
+    this.sessions = this.sessions.filter(session => session.id !== id);
+    if (this.activeId === id) this.activeId = this.sessions.find(session => !session.closed)?.id;
+    this.publish();
+  }
+
+  async focusOfficialChat(id) {
+    const tab = this.officialTabs.get(id);
+    if (!tab) return false;
+    const groups = vscode.window.tabGroups;
+    if (groups.activeTabGroup !== tab.group) {
+      const name = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth'][tab.group.viewColumn - 1];
+      if (name) await vscode.commands.executeCommand('workbench.action.focus' + name + 'EditorGroup');
+    }
+    if (groups.activeTabGroup !== tab.group) throw new Error(t('No se pudo enfocar la pestaña de Claude Code.'));
+    if (groups.activeTabGroup.activeTab !== tab) {
+      const index = tab.group.tabs.indexOf(tab);
+      if (index < 0) return false;
+      await vscode.commands.executeCommand('workbench.action.openEditorAtIndex', index);
+    }
+    return true;
+  }
+
   async createSession(provider, root) {
     if (provider !== undefined && !['codex', 'claude', 'ollama'].includes(provider)) throw new Error(t('Agente no disponible.'));
     root ||= await this.pickFolder(); if (!root) return;
     root = await core.resolveEntry(root);
     const active = this.sessions.find(session => session.id === this.activeId && !session.closed);
     provider ||= ['codex', 'claude', 'ollama'].includes(active?.provider) ? active.provider : 'codex';
-    const selected = { provider, label: { codex: 'Codex', claude: 'Claude', ollama: 'Ollama' }[provider] };
+    const selected = { provider, label: { codex: 'Codex', claude: 'Claude API', ollama: 'Ollama' }[provider] };
     if (!selected.label) throw new Error(t('Agente no disponible.'));
+    if (provider === 'claude' && !await this.claudeKey.ensure()) return;
     let model;
     if (provider === 'ollama') {
       const models = await require('./agent-cli').listOllamaModels(this.configuredExecutable('ollama')).catch(error => {
@@ -86,20 +228,8 @@ class ChatSessions extends TerminalSessions {
     const base = `${selected.label} · ${path.basename(root) || root}`;
     let name = base; for (let index = 2; this.sessions.some(s => !s.closed && s.name === name); index++) name = `${base} (${index})`;
     const permission = permissionMode(this.context.globalState.get(`chatPermission.${selected.provider}`));
-    const session = { id: randomUUID(), name, provider: selected.provider, root, permission, ...(model ? { model } : {}) };
-    if (provider === 'claude') {
-      const previousActive = this.activeId; this.sessions.push(session); this.activeId = session.id;
-      let opened = false;
-      try { opened = await this.showTerminal(session); }
-      finally {
-        if (!opened) {
-          this.sessions = this.sessions.filter(item => item !== session);
-          if (this.activeId === session.id) this.activeId = previousActive;
-        }
-      }
-      if (opened) await this.persist();
-      return;
-    }
+    const session = { id: randomUUID(), name, provider: selected.provider, root, permission,
+      ...(provider === 'claude' ? { access: 'apiKey' } : {}), ...(model ? { model } : {}) };
     this.sessions.push(session); this.activeId = session.id;
     await this.persist(); await this.showTerminal(session);
   }
@@ -126,18 +256,22 @@ class ChatSessions extends TerminalSessions {
     this.writes = operation; return operation;
   }
   getBackend(session) {
-    if (session.provider === 'claude') throw new Error(t('Utiliza el chat oficial de Claude.'));
+    if (session.provider === 'claude' && session.access !== 'apiKey') throw new Error(t('Este chat de Claude se abre en Claude Code.'));
     let agent = this.backends.get(session.id);
     if (!agent) {
-      agent = backend(session, this.configuredExecutable(session.provider), event => this.onAgentEvent(session, event),
-        (prompt, signal) => this.approve(session, prompt, signal), () => this.persist());
+      const emit = event => this.onAgentEvent(session, event);
+      const approve = (prompt, signal) => this.approve(session, prompt, signal);
+      agent = session.provider === 'claude'
+        ? new ClaudeApiBackend(session, { configured: this.configuredExecutable('claude'), fallback: claudeCli.officialBinary(vscode),
+          apiKey: () => this.claudeKey.ensure() }, emit, approve, () => this.persist())
+        : backend(session, this.configuredExecutable(session.provider), emit, approve, () => this.persist());
       this.backends.set(session.id, agent);
     }
     return agent;
   }
   async showTerminal(session, viewColumn) {
+    if (session.access === 'official') return this.focusOfficialChat(session.id);
     if (session.mode === 'terminal' || session.provider === 'terminal') return super.showTerminal(session);
-    if (session.provider === 'claude') return this.officialTabs.open(session.id, () => openOfficialClaude(vscode, session.root));
     if (!vscode.workspace.isTrusted) throw new Error(t('Confía en el workspace para iniciar el chat.'));
     const root = await core.resolveEntry(session.root);
     if (!(await fs.stat(root)).isDirectory()) throw new Error(t('La carpeta del chat ya no existe.'));
@@ -189,7 +323,7 @@ class ChatSessions extends TerminalSessions {
       vscode.window.showWarningMessage(t('No se pudo asociar la pestana restaurada con un chat. Abre la conversacion desde la lista de Chats; su historial se conserva.'));
       return;
     }
-    if (session.provider === 'claude') { panel.dispose(); delete session.closed; await this.selectSession(session.id); return; }
+    if (session.mode === 'terminal' || session.provider === 'terminal') { panel.dispose(); delete session.closed; await this.selectSession(session.id); return; }
     const existing = this.panels.get(session.id);
     if (existing && existing !== panel) { panel.dispose(); existing.reveal(existing.viewColumn); return; }
     await this.history(session);
@@ -205,7 +339,7 @@ class ChatSessions extends TerminalSessions {
     return `<!DOCTYPE html><html lang="${language}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';"><link rel="stylesheet" href="${asset('chat.css')}"><link rel="stylesheet" href="${asset('controls.css')}"><title>${t('Chat del agente')}</title></head><body><div id="app" data-session-id="${encodedSessionId}"><p role="status">${t('Cargando conversacion...')}</p></div><script nonce="${nonce}" src="${asset('i18n.js')}"></script><script nonce="${nonce}" src="${asset('icons.js')}"></script><script nonce="${nonce}" src="${asset('composer-editor.js')}"></script><script nonce="${nonce}" src="${asset('chat.js')}"></script></body></html>`;
   }
   supportsVaultChat(session) {
-    return !!session && session.mode !== 'terminal' && session.provider !== 'terminal' && session.provider !== 'claude';
+    return !!session && session.mode !== 'terminal' && session.provider !== 'terminal' && (session.provider !== 'claude' || session.access === 'apiKey');
   }
 
   activeVaultChat(id) {
@@ -329,10 +463,16 @@ class ChatSessions extends TerminalSessions {
         // A different provider gets an independent conversation and keeps the original intact.
         await this.createSession(message.value, session.root); reply(true); return;
       }
+      if (message.action === 'openOfficialClaude') { reply(await this.openOfficialClaude(session.root)); return; }
       if (message.action === 'new') { await this.createSession(message.provider === undefined ? session.provider : message.provider); reply(true); return; }
       if (message.action === 'select') { await this.selectSession(message.id); reply(true); return; }
       if (message.action === 'close') { await this.closeSession(session.id); return; }
-      if (message.action === 'terminal') { await super.showTerminal(session); reply(true); return; }
+      if (message.action === 'terminal') {
+        // The terminal would run Claude Code with the user's own sign-in, not with this chat's API key.
+        if (session.provider === 'claude') throw new Error(t('Para usar la terminal de Claude Code, crea un chat de Claude con tu suscripción.'));
+        await super.showTerminal(session); reply(true); return;
+      }
+      if (message.action === 'claudeApiKey') { await this.configureClaudeKey(); reply(true); return; }
       if (message.action === 'copy' && typeof message.text === 'string') { await vscode.env.clipboard.writeText(message.text); reply(true); return; }
       if (message.action === 'link') { await this.openChatLink(session, message.url); reply(true); return; }
       throw new Error(t('Acción de chat desconocida.'));
@@ -403,6 +543,21 @@ class ChatSessions extends TerminalSessions {
     if (!this.running.has(session.id)) session.model = name;
     await this.persist();
     return true;
+  }
+  async removeClaudeKey() {
+    await this.claudeKey.remove();
+    // Running Claude processes received the old key in their environment.
+    for (const session of this.sessions.filter(item => item.provider === 'claude' && item.access === 'apiKey')) {
+      if (this.running.has(session.id)) await this.stopSession(session);
+      this.backends.get(session.id)?.dispose(); this.backends.delete(session.id);
+    }
+    vscode.window.showInformationMessage(t('Se ha eliminado la clave de API de Anthropic.'));
+  }
+  async configureClaudeKey() {
+    if (!await this.claudeKey.configure()) return;
+    for (const session of this.sessions.filter(item => item.provider === 'claude' && item.access === 'apiKey' && !this.running.has(item.id))) {
+      this.backends.get(session.id)?.dispose(); this.backends.delete(session.id);
+    }
   }
   resetPermissionConnection(id) {
     this.backends.get(id)?.dispose(); this.backends.delete(id);
@@ -485,7 +640,6 @@ class ChatSessions extends TerminalSessions {
   }
 
   async send(session, text, attachments = [], pastedImages = [], formatted) {
-    if (session.provider === 'claude') throw new Error(t('Utiliza el chat oficial de Claude.'));
     if (session.closed) throw new Error(t('Reabre el chat antes de enviar.'));
     if (this.running.has(session.id)) throw new Error(t('Ya hay una respuesta en curso en este chat.'));
     if (typeof text !== 'string' || text.length > 100000) throw new Error(t('Escribe un mensaje de hasta 100.000 caracteres.'));
@@ -589,7 +743,14 @@ class ChatSessions extends TerminalSessions {
   }
   async closeSession(id) {
     this.clearMessageQueue(id);
-    const session = this.session(id); await this.officialTabs.close(id); await this.stopSession(session);
+    const session = this.session(id);
+    if (session.access === 'official') {
+      const tab = this.officialTabs.get(id);
+      if (tab && !await vscode.window.tabGroups.close(tab)) return false;
+      if (this.officialTabs.has(id)) this.removeOfficialChat(id);
+      return true;
+    }
+    await this.stopSession(session);
     this.backends.get(id)?.dispose(); this.backends.delete(id);
     const panel = this.panels.get(id); this.panels.delete(id); panel?.dispose();
     const terminal = this.terminals.get(id); this.terminals.delete(id); terminal?.dispose();
@@ -646,7 +807,6 @@ class ChatSessions extends TerminalSessions {
   async restartSession(id) {
     const session = this.session(id);
     if (session.mode === 'terminal' || session.provider === 'terminal') return super.restartSession(id);
-    if (session.provider === 'claude') return this.showTerminal(session);
     this.clearMessageQueue(id);
     await this.stopSession(session); this.backends.get(id)?.dispose(); this.backends.delete(id);
     // Reconnect to the saved provider conversation instead of dropping its history.
@@ -654,7 +814,7 @@ class ChatSessions extends TerminalSessions {
   }
   async terminalClosed(terminal) {
     const entry = [...this.terminals].find(([, value]) => value === terminal);
-    if (entry && (this.session(entry[0]).mode === 'terminal' || this.session(entry[0]).provider === 'terminal' || this.session(entry[0]).provider === 'claude')) return super.terminalClosed(terminal);
+    if (entry && (this.session(entry[0]).mode === 'terminal' || this.session(entry[0]).provider === 'terminal')) return super.terminalClosed(terminal);
     if (entry) this.terminals.delete(entry[0]);
   }
   pushChat(session, notice) {
@@ -664,9 +824,9 @@ class ChatSessions extends TerminalSessions {
       sessions: this.sessions.filter(s => !s.closed).map(s => ({ id: s.id, name: s.name, provider: s.provider, root: s.root })) });
   }
   publish() {
-    this.view?.webview.postMessage({ type: 'state', activeId: this.activeId, sessions: this.sessions.map(s => ({ ...s, connected: this.panels.has(s.id) || vscode.window.terminals.includes(this.terminals.get(s.id)) })) });
+    this.view?.webview.postMessage({ type: 'state', activeId: this.activeId, sessions: this.sessions.map(s => ({ ...s, connected: this.officialTabs.has(s.id) || this.panels.has(s.id) || vscode.window.terminals.includes(this.terminals.get(s.id)) })) });
     for (const session of this.sessions) if (this.panels.has(session.id)) { this.panels.get(session.id).title = session.name; this.pushChat(session); }
   }
-  dispose() { this.officialTabs.dispose(); for (const run of this.running.values()) run.controller.abort(); for (const agent of this.backends.values()) agent.dispose(); }
+  dispose() { for (const subscription of this.officialTabSubscriptions) subscription?.dispose(); for (const run of this.running.values()) run.controller.abort(); for (const agent of this.backends.values()) agent.dispose(); }
 }
 module.exports = { ChatSessions, MAX_CONTEXT };

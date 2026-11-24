@@ -6,6 +6,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const core = require('./core');
 const cli = require('./agent-cli');
+const claudeCli = require('./claude-cli');
 const SESSION_ENV = 'MULTIPLE_IA_AGENTS_SESSION_ID';
 
 class TerminalSessions {
@@ -22,9 +23,9 @@ class TerminalSessions {
   }
   log(message) { this.output?.appendLine(`${new Date().toISOString()} ${message}`); }
   session(id) { const session = this.sessions.find(session => session.id === id); if (!session) throw new Error(t('La sesión ya no existe.')); return session; }
-  async persist() {
-    await this.context.globalState.update('sessions', this.sessions);
-    await this.context.globalState.update('activeId', this.activeId);
+  async persist(sessions = this.sessions, activeId = this.activeId) {
+    await this.context.globalState.update('sessions', sessions);
+    await this.context.globalState.update('activeId', activeId);
     this.publish();
   }
   publish() {
@@ -65,13 +66,13 @@ class TerminalSessions {
     this.sessions.push(session); this.activeId = session.id;
     await this.persist();
   }
-  async createTerminalSession(provider = 'terminal', root) {
+  async createTerminalSession(provider = 'terminal', root, label) {
     if (!['codex', 'claude', 'ollama', 'terminal'].includes(provider)) throw new Error(t('Agente no disponible.'));
     root ||= await this.pickFolder(); if (!root) return;
     root = await core.resolveEntry(root);
     const model = provider === 'ollama' ? await this.pickModel() : undefined;
     if (provider === 'ollama' && !model) return;
-    const base = (provider === 'terminal' ? 'Terminal' : 'Terminal ' + cli.AGENTS[provider].label) + ' · ' + (path.basename(root) || root);
+    const base = (label || (provider === 'terminal' ? 'Terminal' : 'Terminal ' + cli.AGENTS[provider].label)) + ' · ' + (path.basename(root) || root);
     let name = base; for (let index = 2; this.sessions.some(s => !s.closed && s.name === name); index++) name = base + ' (' + index + ')';
     const session = { id: randomUUID(), name, root, provider, mode: 'terminal', permission: 'ask', ...(model ? { model } : {}) };
     const previousActive = this.activeId; this.sessions.push(session); this.activeId = session.id;
@@ -90,7 +91,9 @@ class TerminalSessions {
     }
     return true;
   }
-  resolveInvocation(session) { return cli.agentInvocation(session, this.configuredExecutable(session.provider)); }
+  resolveInvocation(session) {
+    return cli.agentInvocation(session, this.configuredExecutable(session.provider), session.provider === 'claude' ? claudeCli.officialBinary(vscode) : undefined);
+  }
   async showTerminal(session) {
     let terminal = this.terminals.get(session.id);
     if (terminal && vscode.window.terminals.includes(terminal)) { terminal.show(); return terminal; }
@@ -99,8 +102,11 @@ class TerminalSessions {
     const root = await core.resolveEntry(session.root);
     if (!(await fs.stat(root)).isDirectory()) throw new Error(t('La carpeta de la sesión ya no existe.'));
     const invocation = session.provider === 'terminal' ? {} : await this.resolveInvocation(session);
-    const location = [...this.terminals.values()].some(value => vscode.window.terminals.includes(value))
-      ? { viewColumn: vscode.ViewColumn.Beside } : vscode.TerminalLocation.Editor;
+    // Claude Code runs unmodified with the user's own sign-in; the chat only pins its conversation id.
+    if (session.provider === 'claude') invocation.shellArgs = [...invocation.shellArgs, ...await claudeCli.conversationArguments(session)];
+    const location = session.provider === 'claude' ? { viewColumn: vscode.ViewColumn.Active }
+      : [...this.terminals.values()].some(value => vscode.window.terminals.includes(value))
+        ? { viewColumn: vscode.ViewColumn.Beside } : vscode.TerminalLocation.Editor;
     const options = { name: session.name, cwd: vscode.Uri.file(root), location,
       isTransient: true, waitOnExit: true, ...invocation, env: { ...invocation.env, [SESSION_ENV]: session.id, TERM: 'xterm-256color', COLORTERM: 'truecolor' } };
     terminal = vscode.window.createTerminal(options);

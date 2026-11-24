@@ -95,8 +95,11 @@ function activate(context) {
     vscode.commands.registerCommand('multipleIAAgents.reopen', run(() => manager.reopenSession())),
     ...['codex', 'claude', 'ollama', 'terminal'].map(provider => vscode.commands.registerCommand('multipleIAAgents.newTerminal.' + provider, run(() => manager.createTerminalSession(provider)))),
     ...['codex', 'claude', 'ollama'].map(provider => vscode.commands.registerCommand('multipleIAAgents.new.' + provider, run(() => manager.createSession(provider)))),
+    vscode.commands.registerCommand('multipleIAAgents.new.claudeNative', run(() => manager.openOfficialClaude())),
     vscode.commands.registerCommand('multipleIAAgents.new', run(() => manager.createSession())),
     vscode.commands.registerCommand('multipleIAAgents.bind', run(() => manager.bindActive())),
+    vscode.commands.registerCommand('multipleIAAgents.claudeApiKey.set', run(() => manager.configureClaudeKey())),
+    vscode.commands.registerCommand('multipleIAAgents.claudeApiKey.remove', run(() => manager.removeClaudeKey())),
     vscode.commands.registerCommand('multipleIAAgents.show', () => vscode.commands.executeCommand('multipleIAAgents.explorer.focus')),
     vscode.window.onDidCloseTerminal(terminal => {
       manager.terminalClosed(terminal).catch(error => vscode.window.showErrorMessage(error.message));
@@ -107,6 +110,10 @@ function activate(context) {
       if (entry) manager.selectSession(entry[0], false).catch(error => vscode.window.showErrorMessage(error.message));
     })
   );
+  void manager.restoreOfficialClaudeLaunch().catch(error => {
+    manager.log(error.stack || error.message);
+    vscode.window.showErrorMessage(error.message);
+  });
   return { manager };
 }
 module.exports = { activate, WorkspaceManager };

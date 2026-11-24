@@ -324,9 +324,8 @@ test('the official Claude action registers the new tab and its workspace folder'
   const panel = { webview: { postMessage: reply => replies.push(reply) } };
   f.manager.panels.set(f.session.id, panel);
   await f.manager.handleChat(f.session, panel, { action: 'openOfficialClaude', requestId: 1 });
-  assert.deepEqual(calls, ['activate', ['claude-vscode.primaryEditor.open'], ['workbench.action.closeAuxiliaryBar'],
-    ['multipleIAAgents.explorer.focus', { preserveFocus: true }], ['workbench.action.openEditorAtIndex', 0],
-    ['workbench.action.keepEditor']]);
+  assert.deepEqual(calls, ['activate', ['claude-vscode.primaryEditor.open'], ['workbench.action.openEditorAtIndex', 0],
+    ['workbench.action.keepEditor'], ['multipleIAAgents.explorer.focus', { preserveFocus: true }]]);
   assert.equal(replies.at(-1).result, true);
   const session = f.manager.session(f.manager.activeId);
   assert.equal(session.root, root);
@@ -365,7 +364,18 @@ test('the official Claude action registers the new tab and its workspace folder'
   const destination = new ChatSessions(f.context);
   destination.pickFolder = async () => assert.fail('The destination already has the chosen folder');
   group.tabs.length = 0;
+  const viewCommand = 'multipleIAAgents.explorer.focus';
+  const execute = fake.commands.executeCommand;
+  fake.commands.executeCommand = async (...args) => {
+    if (args[0] !== 'claude-vscode.primaryEditor.open') return execute(...args);
+    assert.deepEqual(calls.at(-2), [viewCommand, { preserveFocus: true }]);
+    calls.push(args);
+    const tab = newTab();
+    opened.push(tab);
+    setTimeout(() => { group.tabs.push(tab); group.activeTab = tab; }, 2200);
+  };
   await destination.restoreOfficialClaudeLaunch();
+  fake.commands.executeCommand = execute;
   const transferred = destination.session(destination.activeId);
   assert.equal(transferred.root, other);
   assert.equal(destination.officialTabs.get(transferred.id), opened[2]);

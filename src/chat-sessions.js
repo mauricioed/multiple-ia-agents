@@ -15,6 +15,7 @@ const { MODES, permissionMode } = require('./permissions');
 const MAX_CONTEXT = 128 * 1024;
 const MAX_IMAGE = 5 * 1024 * 1024;
 const MAX_IMAGES_TOTAL = 10 * 1024 * 1024;
+const OFFICIAL_CLAUDE_TAB_TIMEOUT = 10_000;
 const md = new MarkdownIt({ html: false, linkify: false, breaks: true });
 md.disable('image');
 const validateMarkdownLink = md.validateLink;
@@ -121,7 +122,10 @@ class ChatSessions extends TerminalSessions {
       if (!Number.isFinite(requested)) return;
       await this.context.globalState.update(key, undefined);
       if (Date.now() - requested > 5 * 60 * 1000) return;
-      await this.launchOfficialClaude(this.requireOfficialClaude(), root, true);
+      const extension = this.requireOfficialClaude();
+      // Folder changes reload the workbench with its last sidebar selected.
+      await vscode.commands.executeCommand('multipleIAAgents.explorer.focus', { preserveFocus: true });
+      await this.launchOfficialClaude(extension, root, true);
     } finally { this.openingOfficialChat = false; }
   }
 
@@ -145,20 +149,20 @@ class ChatSessions extends TerminalSessions {
     const before = new Set(currentTabs());
     await vscode.commands.executeCommand(command);
     let tab;
-    for (let attempt = 0; attempt < 40; attempt++) {
+    const deadline = Date.now() + OFFICIAL_CLAUDE_TAB_TIMEOUT;
+    do {
       tab = currentTabs().find(item => !before.has(item) && isClaude(item));
       if (tab) break;
       await new Promise(resolve => setTimeout(resolve, 50));
-    }
+    } while (Date.now() < deadline);
     if (!tab) throw new Error(t('No se pudo identificar la pestaña nueva de Claude Code.'));
 
     const session = this.registerOfficialChat(tab, root);
     this.activeId = session.id;
     this.publish();
-    await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
-    await vscode.commands.executeCommand('multipleIAAgents.explorer.focus', { preserveFocus: true });
     await this.focusOfficialChat(session.id);
     await vscode.commands.executeCommand('workbench.action.keepEditor');
+    await vscode.commands.executeCommand('multipleIAAgents.explorer.focus', { preserveFocus: true });
     return true;
   }
 

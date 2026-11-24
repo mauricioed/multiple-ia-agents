@@ -1,3 +1,11 @@
+## 0.1.56
+
+- Reveal AI Agents when opening Claude Code in a different folder and show the linked chat once its editor is available, including on slower VS Code startups.
+
+## 0.1.55
+
+- Each native Claude Code chat created from AI Agents has its own editor tab and chat list entry.
+
 ## 0.1.53
 
 - Keep the current VS Code window when changing folders for Claude Code and reuse a restored official tab.

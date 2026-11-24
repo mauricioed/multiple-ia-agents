@@ -1,3 +1,7 @@
+## 0.1.63
+
+- Select saved Claude Code entries without the extra dialog when the folder has no conversation to resume. For unlinked history, choose the conversation from that folder.
+
 ## 0.1.62
 
 - Keep official Claude Code entries in AI Agents after closing VS Code. Reopen a saved native conversation with its original folder when Claude reports its session ID.

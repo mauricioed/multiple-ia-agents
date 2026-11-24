@@ -347,12 +347,16 @@ test('the official Claude action registers the new tab and its workspace folder'
   assert.equal(restored.activeId, session.id);
   assert.equal(restored.officialTabs.size, 0);
 
-  const { showInformationMessage } = fake.window;
-  t.after(() => { fake.window.showInformationMessage = showInformationMessage; });
-  fake.window.showInformationMessage = async () => undefined;
-  await restored.selectSession(session.id, true, 1);
-  assert.equal(restored.officialTabs.size, 0);
-  fake.window.showInformationMessage = async (_message, _options, action) => action;
+  const { showQuickPick } = fake.window;
+  const originalConfig = process.env.CLAUDE_CONFIG_DIR;
+  const config = path.join(root, 'native-claude-config');
+  process.env.CLAUDE_CONFIG_DIR = config;
+  t.after(() => {
+    fake.window.showQuickPick = showQuickPick;
+    if (originalConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = originalConfig;
+  });
+  fake.window.showQuickPick = async () => assert.fail('Blank native entries open directly');
   restored.pickFolder = async () => assert.fail('A saved chat must use its original folder');
   await restored.selectSession(session.id, true, 1);
   assert.equal(restored.officialTabs.get(session.id), opened[2]);
@@ -366,9 +370,32 @@ test('the official Claude action registers the new tab and its workspace folder'
   const backendId = '1a107767-b4ea-4825-9d75-3cb633d72a9a';
   receive({ request: { type: 'update_session_state', sessionId: backendId, idConfirmed: false } });
   assert.equal(restored.session(session.id).backendId, undefined);
-  receive({ request: { type: 'update_session_state', sessionId: backendId, idConfirmed: true } });
+  receive({ request: { type: 'update_session_state', sessionId: backendId, idFromList: true } });
   await restored.persist();
   assert.equal(new ChatSessions(f.context).session(session.id).backendId, backendId);
+
+  const project = path.join(config, 'projects', root.replace(/[^a-zA-Z0-9]/gu, '-'));
+  await fs.mkdir(project, { recursive: true });
+  const candidateId = 'b1107767-b4ea-4825-9d75-3cb633d72a9a';
+  const wrongId = 'c1107767-b4ea-4825-9d75-3cb633d72a9a';
+  for (const [id, cwd] of [[candidateId, root], [backendId, root], [wrongId, path.join(root, 'other')]]) {
+    await fs.writeFile(path.join(project, id + '.jsonl'), [
+      { type: 'user', sessionId: id, cwd, timestamp: new Date().toISOString() },
+      { type: 'custom-title', sessionId: id, customTitle: 'Conversación guardada' }
+    ].map(row => JSON.stringify(row)).join('\n'));
+  }
+  delete restored.session(second.id).officialOpenedAt; // Entries created by 0.1.62 lack this field.
+  fake.window.showQuickPick = async items => {
+    assert.deepEqual(items.map(item => item.id), [candidateId, undefined]);
+    assert.equal(items[0].label, 'Conversación guardada');
+    return undefined;
+  };
+  await restored.selectSession(second.id, true, 1);
+  assert.equal(restored.officialTabs.has(second.id), false);
+  fake.window.showQuickPick = async items => items[0];
+  await restored.selectSession(second.id, true, 1);
+  assert.ok(calls.some(call => call[0] === 'claude-vscode.primaryEditor.open' && call[1] === candidateId));
+  assert.equal(new ChatSessions(f.context).session(second.id).backendId, candidateId);
 
   await f.manager.closeSession(session.id);
   assert.equal(new ChatSessions(f.context).session(session.id).closed, true);

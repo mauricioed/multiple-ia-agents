@@ -36,6 +36,7 @@ class ChatSessions extends TerminalSessions {
     for (const session of this.sessions) {
       const original = saved.find(s => s.id === session.id);
       if (typeof original?.backendId === 'string') session.backendId = original.backendId;
+      if (session.access === 'official' && Number.isFinite(original?.officialOpenedAt)) session.officialOpenedAt = original.officialOpenedAt;
       session.permission = permissionMode(original?.permission);
     }
     this.panelReady = new WeakMap(); this.panelBindings = new WeakMap(); this.vaultFolders = new WeakMap();
@@ -101,17 +102,35 @@ class ChatSessions extends TerminalSessions {
           await claudeCli.conversationExists(sessionId)) {
         return await this.launchOfficialClaude(session, sessionId);
       }
-      const openNew = t('Abrir pestaña nueva');
-      const choice = await vscode.window.showInformationMessage(
-        t('Claude Code todavía no tiene una conversación guardada que AI Agents pueda reanudar.'), {
-          modal: true,
-          detail: t('Puedes abrir otra pestaña nativa en la carpeta guardada.\n{0}', session.root)
-        }, openNew);
-      if (choice !== openNew) return false;
+      const assigned = new Set(this.sessions.filter(item => item !== session && item.access === 'official').map(item => item.backendId));
+      const { conversations, uncertain } = await claudeCli.conversationCandidates(session.root, sessionId ? undefined : session.officialOpenedAt);
+      const items = conversations.filter(item => !assigned.has(item.id)).map(item => ({
+        id: item.id,
+        label: item.title || t('Conversación de Claude Code'),
+        description: new Date(item.modified).toLocaleString(),
+        detail: item.id
+      }));
+      if (items.length || sessionId || uncertain) {
+        items.push({ label: t('Abrir pestaña nueva') });
+        const choice = await vscode.window.showQuickPick(items, {
+          title: t('Reanudar Claude Code en {0}', session.root), matchOnDescription: true, matchOnDetail: true
+        });
+        if (!choice) return false;
+        if (choice.id) {
+          session.backendId = choice.id;
+          await this.persist();
+          return await this.launchOfficialClaude(session, choice.id);
+        }
+      }
+      const openedAt = session.officialOpenedAt;
       delete session.backendId;
+      session.officialOpenedAt = Date.now();
       try { return await this.launchOfficialClaude(session); }
       catch (error) {
-        if (sessionId && !this.officialTabs.has(session.id)) session.backendId = sessionId;
+        if (!this.officialTabs.has(session.id)) {
+          if (sessionId) session.backendId = sessionId;
+          session.officialOpenedAt = openedAt;
+        }
         throw error;
       }
     } finally { this.openingOfficialChat = false; }
@@ -185,13 +204,13 @@ class ChatSessions extends TerminalSessions {
     const base = 'Claude Code · ' + (path.basename(root) || root);
     let name = base;
     for (let index = 2; this.sessions.some(session => !session.closed && session.name === name); index++) name = base + ' (' + index + ')';
-    return { id: randomUUID(), name, provider: 'claude', root, access: 'official' };
+    return { id: randomUUID(), name, provider: 'claude', root, access: 'official', officialOpenedAt: Date.now() };
   }
 
   trackOfficialConversation(session, panel) {
     const subscription = panel.webview.onDidReceiveMessage(message => {
       const request = message?.request;
-      if (request?.type !== 'update_session_state' || request.idConfirmed !== true ||
+      if (request?.type !== 'update_session_state' || (request.idConfirmed !== true && request.idFromList !== true) ||
           request.panelNoLongerHosts || request.isFarewell || typeof request.sessionId !== 'string' ||
           !claudeCli.UUID.test(request.sessionId)) return;
       if (session.backendId) {

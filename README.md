@@ -54,7 +54,7 @@ While a response is running, Enter or the send control queues your next message 
 
 ## GitHub Markdown Vault
 
-Use the Vault button in a chat to select a local Markdown folder. From the Vault explorer you can browse Markdown files, insert one into the current draft, or move it to the trash after confirmation. Use the Vault dialog to save the current conversation as Markdown.
+Use the Vault button in a chat to select a local Markdown folder or choose **Clone existing Markdown repository**. To clone, enter a private GitHub repository's HTTPS URL or `owner/repository` and choose a local destination folder. The clone opens as your active vault. From the Vault explorer you can browse Markdown files, insert one into the current draft, or move it to the trash after confirmation. Use the Vault dialog to save the current conversation as Markdown.
 
 The Vault works locally. If you choose to sync with GitHub, the extension verifies that the remote repository is private before syncing.
 

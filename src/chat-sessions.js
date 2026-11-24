@@ -560,14 +560,16 @@ class ChatSessions extends TerminalSessions {
           reply({ saved: await this.exportVaultConversation(session) });
           return;
         }
-        if (action === 'pickFolder') {
-          const folder = await this.vault.pickFolder();
+        if (action === 'pickFolder' || action === 'pickCloneFolder') {
+          const folder = await this.vault.pickFolder(action === 'pickCloneFolder');
           if (folder) this.vaultFolders.set(panel, folder);
           reply(folder); return;
         }
-        if (action === 'open' && message.folder !== this.vaultFolders.get(panel)?.root) throw new Error(t('Selecciona una carpeta.'));
-        const changed = await this.vault.run(action, this.vaultFolders.get(panel), message.name);
-        if (changed && action === 'open') this.vaultFolders.delete(panel);
+        const folder = this.vaultFolders.get(panel);
+        const usesFolder = action === 'open' || action === 'clone';
+        if (usesFolder && (!folder || message.folder !== folder.root)) throw new Error(t('Selecciona una carpeta.'));
+        const changed = await this.vault.run(action, folder, action === 'clone' ? message.repository : message.name);
+        if (changed && usesFolder) this.vaultFolders.delete(panel);
         if (changed) this.sidebar?.refreshVault();
         reply(changed); return;
       }

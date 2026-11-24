@@ -6,6 +6,6 @@ La extensión no añade telemetría, no consulta cuotas de cuentas y no lee arch
 
 Durante el uso, se guardan localmente nombres de sesión, rutas de carpetas y mensajes de los paneles propios en el almacenamiento de VS Code. Los adjuntos seleccionados se leen al enviar y se incluyen en la solicitud al proveedor elegido. No incluyas secretos o documentos confidenciales en los mensajes si no estás autorizado a enviarlos. Claude Code guarda las conversaciones en su propio almacenamiento y administra sus envíos de datos.
 
-GitHub Markdown Vault guarda localmente el registro de carpetas y la selección activa. Al confirmar una sincronización, usa la sesión de GitHub de VS Code y transfiere los archivos versionados de la bóveda a un repositorio de GitHub cuya visibilidad privada se ha verificado. Git conserva los cambios como commits en la bóveda local.
+GitHub Markdown Vault guarda localmente el registro de carpetas y la selección activa. Al clonar un repositorio, usa la sesión de GitHub de VS Code para verificar que es privado y descargarlo en la carpeta elegida. Al confirmar una sincronización, usa la misma sesión para transferir los archivos versionados de la bóveda a un repositorio cuya visibilidad privada se ha verificado. Git conserva los cambios como commits en la bóveda local.
 
 Los escaneos de patrones de credenciales y las comprobaciones de archivos excluidos reducen el riesgo de filtraciones en la distribución; no garantizan identificar todos los secretos posibles ni certifican los datos que introduzca un usuario posteriormente.

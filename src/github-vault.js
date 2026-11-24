@@ -23,6 +23,24 @@ function gitEnvironment() {
   return { ...env, GIT_TERMINAL_PROMPT: '0' };
 }
 
+function githubGit(options, token, hooks, failure) {
+  const entries = [
+    ['http.extraHeader', ''],
+    ['http.https://github.com/.extraHeader', `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`],
+    ['http.followRedirects', 'false'],
+    ['core.hooksPath', hooks]
+  ];
+  const env = { ...options.env, GIT_CONFIG_COUNT: String(entries.length) };
+  for (const [index, [key, value]] of entries.entries()) {
+    env['GIT_CONFIG_KEY_' + index] = key;
+    env['GIT_CONFIG_VALUE_' + index] = value;
+  }
+  return async (...args) => {
+    try { return (await exec('git', args, { ...options, env })).stdout.trim(); }
+    catch { throw new Error(failure); }
+  };
+}
+
 function repositoryName(name) {
   const normalized = name.normalize('NFKD').replace(/\p{M}/gu, '').trim().replace(/[^a-z\d_.-]+/giu, '-');
   if (/^[a-z\d_.-]{1,100}$/iu.test(normalized) && /[a-z\d]/iu.test(normalized) && !/\.git$/iu.test(normalized)) return normalized;
@@ -125,24 +143,25 @@ class GitHubVault {
     return this.localRoot(vault);
   }
 
-  async run(action, folder, name) {
+  async run(action, folder, value) {
     if (this.busy) return false;
     this.busy = true;
     try {
-      if (action === 'open') return await this.open(folder, name);
+      if (action === 'open') return await this.open(folder, value);
+      if (action === 'clone') return await this.clone(folder, value);
       if (action === 'sync') return await this.sync();
       return false;
     } finally { this.busy = false; }
   }
 
-  async pickFolder() {
+  async pickFolder(forClone = false) {
     const currentVault = this.active;
     const defaultRoot = currentVault && await this.localRoot(currentVault, true);
     const [folder] = await vscode.window.showOpenDialog({
       canSelectFiles: false,
       canSelectFolders: true,
-      defaultUri: defaultRoot ? vscode.Uri.file(defaultRoot) : undefined,
-      openLabel: t('Abrir carpeta como bóveda')
+      defaultUri: defaultRoot ? vscode.Uri.file(forClone ? path.dirname(defaultRoot) : defaultRoot) : undefined,
+      openLabel: forClone ? t('Elegir carpeta de destino') : t('Abrir carpeta como bóveda')
     }) || [];
     if (!folder || folder.scheme !== 'file') return false;
     const root = await fs.realpath(folder.fsPath);
@@ -162,6 +181,56 @@ class GitHubVault {
     const vault = { name: name.trim(), root };
     await storage.update(registryKey, [...vaults.filter(item => path.relative(item.root, root)), vault]);
     await this.context.workspaceState.update(activeKey, vault);
+    return true;
+  }
+
+  async clone(folder, input) {
+    if (!folder) return false;
+    if (!vscode.workspace.isTrusted) throw new Error(t('Clonar una bóveda requiere un espacio de trabajo de confianza.'));
+    const value = typeof input === 'string' ? input.trim().replace(/\/$/u, '') : '';
+    const url = value.includes('://') ? value : 'https://github.com/' + value;
+    const repository = repoUrl.exec(url)?.[1];
+    const name = repository?.split('/')[1];
+    if (!name || repositoryName(name) !== name || name.endsWith('.')) {
+      throw new Error(t('Introduce una URL HTTPS de GitHub o propietario/repositorio.'));
+    }
+    const parent = await this.localRoot(folder);
+    const root = path.join(parent, name);
+    const occupied = t('Ya existe una carpeta con el nombre del repositorio. Elige otra carpeta de destino.');
+    const existing = await fs.lstat(root).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    if (existing) throw new Error(occupied);
+    const { accessToken } = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+    const metadata = await github(accessToken, `/repos/${repository}`);
+    privateRepo(metadata);
+    const remote = metadata.clone_url;
+    const canonical = repoUrl.exec(remote)?.[1];
+    if (canonical?.toLowerCase() !== repository.toLowerCase()) {
+      throw new Error(t('El destino debe ser un repositorio HTTPS de GitHub.'));
+    }
+    const options = { cwd: parent, timeout: 120000, windowsHide: true, env: gitEnvironment() };
+    const failure = t('No se pudo clonar el repositorio. Revisa el acceso a GitHub y el destino local.');
+    const { stdout } = await exec('git', ['ls-remote', '--get-url', '--', remote], options).catch(() => { throw new Error(failure); });
+    if (stdout.trim() !== remote) throw new Error(t('El destino debe ser un repositorio HTTPS de GitHub.'));
+    try { await fs.mkdir(root); }
+    catch (error) {
+      if (error.code === 'EEXIST') throw new Error(occupied);
+      throw error;
+    }
+    const remoteGit = githubGit(options, accessToken, path.join(root, '.git', 'vault-disabled-hooks'), failure);
+    try {
+      await remoteGit('-c', 'credential.helper=', '-c', 'protocol.allow=never', '-c', 'protocol.https.allow=always',
+        'clone', '--origin', 'origin', '--no-recurse-submodules', '--', remote, root);
+    } catch (error) {
+      await fs.rmdir(root).catch(() => {});
+      throw error;
+    }
+    const urls = await Promise.all([[], ['--push']].map(flags => exec(
+      'git', ['remote', 'get-url', '--all', ...flags, 'origin'], { ...options, cwd: root }
+    )));
+    if (urls.some(result => result.stdout.trim() !== remote)) {
+      throw new Error(t('La descarga y la subida deben usar el mismo repositorio HTTPS de GitHub.'));
+    }
+    await this.open({ root }, name);
     return true;
   }
 
@@ -232,15 +301,7 @@ class GitHubVault {
 
     const branch = await git('symbolic-ref', '--short', 'HEAD');
     const ref = `refs/heads/${branch}`;
-    const remoteGit = async (...args) => {
-      const env = { ...options.env, GIT_CONFIG_COUNT: '4',
-        GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: '',
-        GIT_CONFIG_KEY_1: 'http.https://github.com/.extraHeader', GIT_CONFIG_VALUE_1: `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`,
-        GIT_CONFIG_KEY_2: 'http.followRedirects', GIT_CONFIG_VALUE_2: 'false',
-        GIT_CONFIG_KEY_3: 'core.hooksPath', GIT_CONFIG_VALUE_3: hooks };
-      try { return (await exec('git', args, { ...options, env })).stdout.trim(); }
-      catch { throw new Error(t('No se pudo sincronizar con GitHub. Revisa el acceso y el estado de las ramas.')); }
-    };
+    const remoteGit = githubGit(options, token, hooks, t('No se pudo sincronizar con GitHub. Revisa el acceso y el estado de las ramas.'));
     const remoteBranch = await remoteGit('ls-remote', '--heads', fetchUrl, ref);
     await git('add', '-A', '--', '.');
     const initial = !(await git('rev-parse', '--verify', 'HEAD').catch(() => ''));

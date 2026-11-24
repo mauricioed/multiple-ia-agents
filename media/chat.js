@@ -246,6 +246,7 @@ vault.setAttribute('aria-expanded', 'false');
 vaultDialog.addEventListener('close', () => vault.setAttribute('aria-expanded', 'false'));
 const vaultActions = {
   open: [t('Abrir carpeta como bóveda'), t('Elige la carpeta existente que quieres explorar.')],
+  clone: [t('Clonar repositorio Markdown existente'), t('Elige la carpeta donde se creará el clon y se abrirá como bóveda.')],
   save: [t('Guardar conversación en GitHub Markdown Vault'), t('Elige dónde guardar la conversación dentro de la bóveda activa.')],
   sync: [t('Conectar con GitHub y sincronizar bóveda')]
 };
@@ -282,26 +283,31 @@ function showVaultForm(action) {
   const [title, description] = vaultActions[action];
   const form = el('form', undefined, 'vault-form');
   if (description) form.append(el('p', description));
+  const cloning = action === 'clone';
+  const usesFolder = action === 'open' || cloning;
   let folder;
   const name = el('input');
   name.type = 'text';
   name.required = true;
-  name.disabled = true;
+  name.disabled = !cloning;
+  if (cloning) name.placeholder = t('propietario/repositorio');
   const folderPath = el('p');
-  const browse = button(t('Examinar'), t('Seleccionar carpeta de la bóveda'), async () => {
+  const browse = button(t('Examinar'), cloning ? t('Elegir carpeta de destino') : t('Seleccionar carpeta de la bóveda'), async () => {
     browse.disabled = true;
     back.disabled = true;
     submit.disabled = true;
     vaultDialog.setAttribute('aria-busy', 'true');
     try {
-      const selected = await rpc('githubVault', { vaultAction: 'pickFolder' });
+      const selected = await rpc('githubVault', { vaultAction: cloning ? 'pickCloneFolder' : 'pickFolder' });
       if (!selected) return;
       folder = selected;
       folderPath.textContent = selected.root;
-      name.disabled = false;
-      name.value = selected.name;
-      name.focus();
-      name.select();
+      if (!cloning) {
+        name.disabled = false;
+        name.value = selected.name;
+        name.focus();
+        name.select();
+      }
     } catch (failure) {
       feedback.textContent = failure.message || String(failure);
     } finally {
@@ -310,32 +316,37 @@ function showVaultForm(action) {
       vaultDialog.removeAttribute('aria-busy');
     }
   });
-  if (action === 'open') {
-    const label = el('label', t('Nombre de la bóveda'));
+  if (usesFolder) {
+    const label = el('label', cloning ? t('Repositorio de GitHub') : t('Nombre de la bóveda'));
     label.append(name);
-    form.append(browse, folderPath, label);
+    if (cloning) form.append(label, browse, folderPath);
+    else form.append(browse, folderPath, label);
   }
   const feedback = el('p');
   feedback.setAttribute('role', 'alert');
   const footer = el('div', undefined, 'vault-actions');
   const back = button(t('Volver'), t('Volver'), showVaultOptions);
-  const submitText = action === 'sync' ? t('Sincronizar') : action === 'save' ? t('Guardar como…') : t('Abrir bóveda');
+  const submitText = { sync: t('Sincronizar'), save: t('Guardar como…'), open: t('Abrir bóveda'), clone: t('Clonar y abrir') }[action];
   const submit = el('button', submitText);
   submit.type = 'submit';
-  submit.disabled = action === 'open';
+  submit.disabled = usesFolder;
   footer.append(back, submit);
   form.append(feedback, footer);
   vaultDialog.replaceChildren(vaultHeading(title), form);
-  (action === 'open' ? browse : submit).focus();
+  (cloning ? name : usesFolder ? browse : submit).focus();
   form.addEventListener('submit', async event => {
     event.preventDefault();
     if (submit.disabled) return;
     submit.disabled = back.disabled = browse.disabled = true;
+    const input = name.value;
+    name.disabled = true;
     submit.textContent = t('Procesando…');
     feedback.textContent = '';
     vaultDialog.setAttribute('aria-busy', 'true');
     try {
-      const result = await rpc('githubVault', { vaultAction: action, folder: folder?.root, name: name.value });
+      const result = await rpc('githubVault', {
+        vaultAction: action, folder: folder?.root, ...(cloning ? { repository: input } : { name: input })
+      });
       if (result === false || (action === 'save' && !result?.saved)) return;
       vaultDialog.close();
       if (result?.saved) notice.textContent = t('Conversación guardada en la carpeta local de GitHub Markdown Vault.');
@@ -344,6 +355,7 @@ function showVaultForm(action) {
     } finally {
       vaultDialog.removeAttribute('aria-busy');
       submit.disabled = back.disabled = browse.disabled = false;
+      name.disabled = !(cloning || folder);
       submit.textContent = submitText;
     }
   });

@@ -707,6 +707,30 @@ test('terminal submenu registers each provider independently of chat creation',(
   assert.ok(pkg.contributes.menus['view/title'].some(item=>item.submenu==='multipleIAAgents.newTerminals'));
 });
 
+test('clones a Vault from the chat form and refreshes its explorer after success', async t => {
+  const f = await fixture(t);
+  const request = { action: 'githubVault', vaultAction: 'clone', folder: f.root, repository: 'owner/notes' };
+  const calls = [];
+  const replies = [];
+  const panel = { webview: { postMessage: message => replies.push(message) } };
+  f.manager.panels.set(f.session.id, panel);
+  f.manager.pushChat = () => {};
+  f.manager.sidebar = { refreshVault: () => calls.push('refresh') };
+  f.manager.vault = {
+    pickFolder: async forClone => { assert.equal(forClone, true); return { root: f.root }; },
+    run: async (...args) => { calls.push(args); return true; }
+  };
+  await f.manager.handleChat(f.session, panel, request);
+  assert.match(replies.at(-1).error, /Selecciona una carpeta/);
+  assert.deepEqual(calls, []);
+  await f.manager.handleChat(f.session, panel, { action: 'githubVault', vaultAction: 'pickCloneFolder' });
+  assert.deepEqual(replies.at(-1).result, { root: f.root });
+  await f.manager.handleChat(f.session, panel, request);
+  assert.equal(replies.at(-1).result, true);
+  assert.deepEqual(calls, [['clone', { root: f.root }, 'owner/notes'], 'refresh']);
+  assert.equal(f.manager.vaultFolders.has(panel), false);
+});
+
 test('opens an existing Markdown vault and lists its nested documents independently of the chat folder', async t => {
   const f = await fixture(t);
   const root = path.join(f.root, 'existing-vault');

@@ -1,3 +1,7 @@
+## 0.1.67
+
+- Clone an existing private GitHub Markdown repository from the Vault dialog and open the clone as the active vault.
+
 ## 0.1.66
 
 - Correct the spelling of GitHub Markdown Vault in the chat toolbar.

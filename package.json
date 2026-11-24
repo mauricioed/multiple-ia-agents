@@ -2,7 +2,7 @@
     "name": "multiple-ia-agents",
     "displayName": "Multiple AI Agent Chats",
     "description": "%extension.description%",
-    "version": "0.1.64",
+    "version": "0.1.65",
     "publisher": "Mauricio",
     "icon": "media/icon.png",
     "engines": {
@@ -87,7 +87,7 @@
             },
             {
                 "command": "multipleIAAgents.new.codex",
-                "title": "Codex",
+                "title": "%ui.25%",
                 "category": "Multiple AI Agent Chats"
             },
             {
@@ -102,7 +102,7 @@
             },
             {
                 "command": "multipleIAAgents.new.ollama",
-                "title": "Ollama",
+                "title": "%ui.26%",
                 "category": "Multiple AI Agent Chats"
             },
             {

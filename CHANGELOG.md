@@ -1,3 +1,7 @@
+## 0.1.65
+
+- Label custom Codex, Claude and Ollama chats in the new chat menus so they are distinct from Official Claude Code.
+
 ## 0.1.64
 
 - Reconnect restored official Claude Code editor tabs to their original AI Agents entries and restore their saved folders.

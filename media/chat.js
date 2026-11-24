@@ -66,12 +66,12 @@ function setAgentMenu(open, restoreFocus = true) {
   if (open) agentMenu.querySelector('button')?.focus(); else if (restoreFocus) agentMenuToggle.focus();
 }
 for (const [name, action] of [
-  ['Codex', () => rpc('new', { provider: 'codex' })],
-  [t('Claude con clave de API'), () => rpc('new', { provider: 'claude' })],
+  [t('Chat personalizado de Codex'), () => rpc('new', { provider: 'codex' })],
+  [t('Chat personalizado de Claude (clave de API)'), () => rpc('new', { provider: 'claude' })],
   [t('Claude Code oficial'), () => rpc('openOfficialClaude')],
-  ['Ollama', () => rpc('new', { provider: 'ollama' })]
+  [t('Chat personalizado de Ollama'), () => rpc('new', { provider: 'ollama' })]
 ]) {
-  const item = button(name, t('Nuevo chat con ') + name, async () => { setAgentMenu(false); await action(); });
+  const item = button(name, name, async () => { setAgentMenu(false); await action(); });
   item.replaceChildren(document.createTextNode(name)); item.setAttribute('role', 'menuitem'); item.tabIndex = -1;
   agentMenu.append(item);
 }

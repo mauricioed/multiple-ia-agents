@@ -20,6 +20,8 @@
     "ui.20": "Ruta opcional al ejecutable de Claude Code instalado por el usuario. Si se deja vacía, se usa el PATH o la extensión oficial de Claude Code.",
     "ui.21": "Configurar la clave de API de Anthropic para los chats de Claude",
     "ui.22": "Eliminar la clave de API de Anthropic",
-    "ui.23": "Claude con clave de API",
-    "ui.24": "Claude Code oficial"
+    "ui.23": "Chat personalizado de Claude (clave de API)",
+    "ui.24": "Claude Code oficial",
+    "ui.25": "Chat personalizado de Codex",
+    "ui.26": "Chat personalizado de Ollama"
 }

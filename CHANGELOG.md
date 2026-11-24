@@ -1,3 +1,83 @@
+## 0.1.47
+
+- Update the version badge and document the current chat history, GitHub Markdown Vault, and message queue in the extension overview.
+
+## 0.1.46
+
+- Show the local date and time of the last text message sent by the user in each closed-chat entry. Restore the selected conversation in the current panel and keep the previous chat in history.
+
+## 0.1.45
+
+- Sort closed chats by the timestamp of the last text message sent by the user, newest first.
+
+## 0.1.44
+
+- Preview the last text message sent by the user in each closed chat. Open new chats in the active editor group and restore chats in the originating group. Allow the official Claude panel to switch folders in the current window after confirmation.
+
+## 0.1.43
+
+- Give Send, Queue, and Stop distinct icons in the composer.
+
+## 0.1.42
+
+- Start Vault synchronization from its sidebar status control. Show the last user message in closed-chat history and reopen chats in the originating editor group.
+
+## 0.1.41
+
+- List closed chats from the current folder directly inside the chat panel and reopen saved conversations there.
+
+## 0.1.40
+
+- Edit the Vault name in the chat and move Markdown files to the trash from its explorer after confirmation.
+
+## 0.1.39
+
+- Show a preview of the latest available message when selecting a closed chat to reopen.
+
+## 0.1.38
+
+- Queue messages per chat while an agent is replying and show waiting messages in the composer.
+
+## 0.1.37
+
+- Use the selected Vault name when creating a private GitHub repository and verify the visibility of existing connections.
+
+## 0.1.36
+
+- Save the active conversation from the Vault dialog and preview the last available message for open chats.
+
+## 0.1.35
+
+- Restore the last open Vault folder and handle folders removed outside the extension.
+
+## 0.1.34
+
+- Insert a Markdown file into the active draft, export the active chat, and show whether the local Vault has changed since the last sync.
+
+## 0.1.33
+
+- Open the official Claude Code panel for the workspace folder or offer to switch to the selected folder.
+
+## 0.1.32
+
+- Manage Vault actions through forms inside the chat.
+
+## 0.1.31
+
+- Align Vault browsing, Markdown export, and GitHub sync across editions.
+
+## 0.1.30
+
+- Open existing Markdown folders in the Vault explorer and restore saved chat history.
+
+## 0.1.29
+
+- Keep active chats in the sidebar and make closed conversations available through the reopen command.
+
+## 0.1.28
+
+- Add GitHub Markdown Vault, an independent Markdown explorer, and synchronization with a private GitHub repository.
+
 ## 0.1.27
 
 - Keep closed custom chats visible so reopening restores the saved conversation.

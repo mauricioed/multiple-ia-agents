@@ -1,6 +1,6 @@
 # Multiple AI Agent Chats
 
-![VS Code ^1.145.0](https://img.shields.io/badge/VS%20Code-%5E1.145.0-4377bd) ![Version 0.1.26](https://img.shields.io/badge/version-0.1.26-655bd5) [![MIT License](https://img.shields.io/badge/license-MIT-56964d)](LICENSE)
+![VS Code ^1.145.0](https://img.shields.io/badge/VS%20Code-%5E1.145.0-4377bd) ![Version 0.1.47](https://img.shields.io/badge/version-0.1.47-655bd5) [![MIT License](https://img.shields.io/badge/license-MIT-56964d)](LICENSE)
 
 Manage Codex, Claude Code, and Ollama from the **AI Agents** sidebar in VS Code. Each chat or terminal can use a different local folder. Selecting a session also switches the file explorer to its folder.
 
@@ -39,11 +39,21 @@ Use VS Code 1.145 or later and open a trusted local workspace. Search for `Mauri
 1. Open **AI Agents** from the Activity Bar or run **Multiple AI Agent Chats: Show AI Agents (no usage meters)** from the Command Palette.
 2. Open the chat button's dropdown, choose an agent, and select a folder.
 3. Select a session to return to it and browse its files. Double-click a Markdown file to open it in a floating editor.
-4. In Codex or Ollama chats, use the clock icon to jump to a message. To restore a closed chat, run **Multiple AI Agent Chats: Reopen closed chat**.
+4. In Codex or Ollama chats, open the chat history to see closed conversations from the current folder. Each entry shows the last text message you sent and its local date and time. Select an entry to restore it in the same panel. You can also run **Multiple AI Agent Chats: Reopen closed chat** from the Command Palette.
 
 Use the formatting toolbar below the message input to add emphasis, lists, code, links, or tables. The formatting button below the draft shows or hides the toolbar. Paste text or PNG, JPEG, and WebP images directly into the message editor. Images appear as removable attachments and require a model that supports image input.
 
 The extension interface is available in English and Spanish.
+
+While a response is running, Enter or the send control queues your next message for that chat. The composer shows waiting messages and has a separate stop control.
+
+## GitHub Markdown Vault
+
+Use the Vault button in a chat to select a local Markdown folder. From the Vault explorer you can browse Markdown files, insert one into the current draft, or move it to the trash after confirmation. Use the Vault dialog to save the current conversation as Markdown.
+
+The Vault works locally. If you choose to sync with GitHub, the extension verifies that the remote repository is private before syncing.
+
+See the [changelog](CHANGELOG.md) for recent improvements to chat history, the Vault, and message controls.
 
 ## Terminal sessions
 

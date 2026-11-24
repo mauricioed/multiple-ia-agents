@@ -1,3 +1,7 @@
+## 0.1.68
+
+- Update the VS Code description in English and Spanish to include native Claude Code tabs and GitHub Markdown Vault.
+
 ## 0.1.67
 
 - Clone an existing private GitHub Markdown repository from the Vault dialog and open the clone as the active vault.

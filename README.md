@@ -1,10 +1,10 @@
 # Multiple AI Agent Chats
 
-![VS Code ^1.145.0](https://img.shields.io/badge/VS%20Code-%5E1.145.0-4377bd) ![Version 0.1.64](https://img.shields.io/badge/version-0.1.64-655bd5) [![MIT License](https://img.shields.io/badge/license-MIT-56964d)](LICENSE)
+![VS Code ^1.145.0](https://img.shields.io/badge/VS%20Code-%5E1.145.0-4377bd) ![Version 0.1.68](https://img.shields.io/badge/version-0.1.68-655bd5) [![MIT License](https://img.shields.io/badge/license-MIT-56964d)](LICENSE)
 
 Manage Codex, Claude Code, and Ollama from the **AI Agents** sidebar in VS Code. Each chat or terminal can use a different local folder. Selecting a session also switches the file explorer to its folder.
 
-**Español.** Gestiona chats de Codex, Ollama y Claude, abre Claude Code con tu suscripción en la carpeta de cada chat y ejecuta terminales de agentes en VS Code.
+**Español.** Gestiona chats de Codex, Claude y Ollama por carpeta, abre pestañas nativas de Claude Code y clona o sincroniza repositorios privados con GitHub Markdown Vault.
 
 This project is independent of OpenAI, Anthropic, and Ollama.
 

@@ -1,5 +1,5 @@
 {
-    "extension.description": "Manage Codex, Ollama and Claude chats, open Claude Code with your subscription in each chat folder, and run agent terminals in VS Code.",
+    "extension.description": "Run Codex, Claude and Ollama chats per folder, open native Claude Code tabs, and clone or sync private Markdown repositories with GitHub Markdown Vault.",
     "ui.1": "New chat",
     "ui.2": "Show AI Agents (no usage meters)",
     "ui.3": "Refresh chat files",

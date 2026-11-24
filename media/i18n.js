@@ -5,7 +5,6 @@ const en={
   'No se pudo enfocar la pestaña de Claude Code.': 'Could not focus the Claude Code tab.',
   'Claude Code oficial': 'Official Claude Code',
   'Esta versión de Claude Code no admite abrir otra carpeta en una pestaña nativa de esta ventana.': 'This Claude Code version cannot open a different folder in a native tab in this window.',
-  'Al recargar VS Code, Claude Code puede restaurar esta pestaña con la carpeta principal.': 'After reloading VS Code, Claude Code may restore this tab with the primary folder.',
   'Abrir pestaña nueva': 'Open New Tab',
   'Conversación de Claude Code': 'Claude Code Conversation',
   'Reanudar Claude Code en {0}': 'Resume Claude Code in {0}',

@@ -21,7 +21,7 @@
           const local=fs.readFileSync(path.join(root,name.slice('extension/'.length)));if(!local.equals(bytes))throw new Error('Stale packaged source: '+name);
           if(/C:[\\/]+Users[\\/]+[A-Za-z0-9_.-]+/i.test(text))throw new Error('Private machine path in VSIX source: '+name);
         }
-        if(name==='extension/package.json'){const manifest=JSON.parse(text);if(manifest.name!==pkg.name||manifest.version!==pkg.version||!manifest.extensionDependencies.includes('anthropic.claude-code'))throw new Error('Wrong packaged identity or Claude dependency');}
+        if(name==='extension/package.json'){const manifest=JSON.parse(text);if(manifest.name!==pkg.name||manifest.version!==pkg.version||!manifest.extensionPack?.includes('anthropic.claude-code'))throw new Error('Wrong packaged identity or missing Claude extension pack entry');}
         zip.readEntry();
       })().catch(fail);});
       zip.on('end',()=>{if(required.size)return reject(new Error('Missing legal or manifest entries: '+[...required].join(', ')));resolve();});zip.readEntry();

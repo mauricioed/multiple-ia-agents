@@ -2,7 +2,7 @@
     "name": "multiple-ia-agents",
     "displayName": "Multiple AI Agent Chats",
     "description": "%extension.description%",
-    "version": "0.1.63",
+    "version": "0.1.64",
     "publisher": "Mauricio",
     "icon": "media/icon.png",
     "engines": {
@@ -328,12 +328,13 @@
         "@vscode/vsce": "4.1.1",
         "playwright-core": "1.64.1"
     },
-    "extensionDependencies": [
-        "vscode.markdown-language-features",
+    "extensionPack": [
         "anthropic.claude-code"
     ],
     "activationEvents": [
+        "*",
         "onStartupFinished",
+        "onWebviewPanel:claudeVSCodePanel",
         "onWebviewPanel:multipleIAAgents.chat"
     ],
     "overrides": {

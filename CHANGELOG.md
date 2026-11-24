@@ -1,3 +1,7 @@
+## 0.1.64
+
+- Reconnect restored official Claude Code editor tabs to their original AI Agents entries and restore their saved folders.
+
 ## 0.1.63
 
 - Select saved Claude Code entries without the extra dialog when the folder has no conversation to resume. For unlinked history, choose the conversation from that folder.

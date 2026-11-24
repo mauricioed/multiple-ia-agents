@@ -8,19 +8,81 @@ const { t } = require('./i18n');
 
 const supportedVersion = '2.1.331';
 const supportedEntryHash = '9dead0c8f6970cb4120bd002ee1eb2b10d025677941e4fc19c7162c67f3f25fa';
+const normalize = value => value.replace(/\\/gu, '/').toLowerCase();
+const isPanel = value => typeof value?.webview?.onDidReceiveMessage === 'function' &&
+  typeof value.onDidDispose === 'function';
 
 function unavailable() {
   return new Error(t('Esta versión de Claude Code no admite abrir otra carpeta en una pestaña nativa de esta ventana.'));
 }
 
+function supportsBuild(extension) {
+  return process.platform === 'win32' && process.arch === 'x64' &&
+    extension?.packageJSON?.version === supportedVersion && extension.packageJSON.main === './extension.js';
+}
+
 async function verifiedEntry(extension) {
-  if (process.platform !== 'win32' || process.arch !== 'x64' ||
-      extension.packageJSON?.version !== supportedVersion || extension.packageJSON.main !== './extension.js') {
-    return undefined;
-  }
+  if (!supportsBuild(extension)) return undefined;
   const file = await fs.promises.realpath(path.join(extension.extensionPath, extension.packageJSON.main));
   const source = await fs.promises.readFile(file);
   return createHash('sha256').update(source).digest('hex') === supportedEntryHash ? file : undefined;
+}
+
+function stackMatches(stack, file, names) {
+  const frames = String(stack).split('\n').slice(2, 2 + names.length);
+  const location = normalize(file) + ':';
+  return frames.length === names.length && frames.every((frame, index) =>
+    frame.includes(names[index]) && normalize(frame).includes(location));
+}
+
+function watchOfficialClaudeRestores(extension, defaultFolder, findSession, bind, onError) {
+  if (!supportsBuild(extension)) return undefined;
+  // VS Code revives the selected webview before asynchronous extension startup
+  // work finishes. Validate the installed build before registering this observer.
+  const file = fs.realpathSync(path.join(extension.extensionPath, extension.packageJSON.main));
+  if (createHash('sha256').update(fs.readFileSync(file)).digest('hex') !== supportedEntryHash) return undefined;
+  const primary = fs.realpathSync(defaultFolder);
+  const weakSet = WeakMap.prototype.set;
+  let disposed = false;
+  const capture = new Proxy(weakSet, {
+    apply(fn, receiver, args) {
+      const result = Reflect.apply(fn, receiver, args);
+      if (disposed || typeof args[1] !== 'boolean' || typeof args[0]?.reveal !== 'function') return result;
+      const stack = new Error().stack;
+      if (!stackMatches(stack, file, ['.setupPanel (']) || !isPanel(args[0])) return result;
+      const panel = args[0];
+      const session = findSession(panel);
+      if (!session) return result;
+      try {
+        const folder = fs.realpathSync(session.root);
+        if (!fs.statSync(folder).isDirectory()) return result;
+        let redirected = !path.relative(primary, folder);
+        const original = fs.realpathSync;
+        const redirect = new Proxy(original, {
+          apply(target, context, params) {
+            if (typeof params[0] === 'string' && params.length === 1 && !path.relative(defaultFolder, params[0]) &&
+                stackMatches(new Error().stack, file, ['at ni (', 'at Hi (', '.setupPanel ('])) {
+              redirected = true;
+              fs.realpathSync = original;
+              return folder;
+            }
+            return Reflect.apply(target, context, params);
+          }
+        });
+        if (!redirected) fs.realpathSync = redirect;
+        queueMicrotask(() => {
+          if (fs.realpathSync === redirect) fs.realpathSync = original;
+          if (redirected && !disposed) bind(session, panel);
+        });
+      } catch (error) { onError(error); }
+      return result;
+    }
+  });
+  WeakMap.prototype.set = capture;
+  return { dispose() {
+    disposed = true;
+    if (WeakMap.prototype.set === capture) WeakMap.prototype.set = weakSet;
+  } };
 }
 
 async function openOfficialClaude(extension, { defaultFolder, folder, sessionId, observePanel }, open) {
@@ -34,15 +96,7 @@ async function openOfficialClaude(extension, { defaultFolder, folder, sessionId,
   // Trust, permissions and unrelated operations use the original methods.
   const scope = new AsyncLocalStorage();
   const token = {};
-  const normalize = value => value.replace(/\\/gu, '/').toLowerCase();
-  const location = normalize(file) + ':';
-  const framesMatch = (stack, names) => {
-    const frames = String(stack).split('\n').slice(2, 2 + names.length);
-    return frames.length === names.length && frames.every((frame, index) =>
-      frame.includes(names[index]) && normalize(frame).includes(location));
-  };
-  const isPanel = value => typeof value?.webview?.onDidReceiveMessage === 'function' &&
-    typeof value.onDidDispose === 'function';
+  const framesMatch = (stack, names) => stackMatches(stack, file, names);
   const original = fs.realpathSync;
   let redirected = !defaultFolder;
   let existingPanel;
@@ -99,4 +153,4 @@ async function openOfficialClaude(extension, { defaultFolder, folder, sessionId,
   }
 }
 
-module.exports = { openOfficialClaude, unavailable };
+module.exports = { openOfficialClaude, unavailable, watchOfficialClaudeRestores };

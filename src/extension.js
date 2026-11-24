@@ -110,6 +110,7 @@ function activate(context) {
       if (entry) manager.selectSession(entry[0], false).catch(error => vscode.window.showErrorMessage(error.message));
     })
   );
+  manager.startOfficialRestore();
   return { manager };
 }
 module.exports = { activate, WorkspaceManager };

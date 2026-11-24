@@ -11,13 +11,14 @@ const { TerminalSessions } = require('./terminal-sessions');
 const core = require('./core');
 const { backend } = require('./backends');
 const { ClaudeApiBackend, ClaudeApiKey } = require('./claude-api');
-const { openOfficialClaude: openNativeClaude, unavailable: officialClaudeFolderUnavailable } = require('./official-claude-cwd');
+const { openOfficialClaude: openNativeClaude, unavailable: officialClaudeFolderUnavailable, watchOfficialClaudeRestores } = require('./official-claude-cwd');
 const claudeCli = require('./claude-cli');
 const { MODES, permissionMode } = require('./permissions');
 const MAX_CONTEXT = 128 * 1024;
 const MAX_IMAGE = 5 * 1024 * 1024;
 const MAX_IMAGES_TOTAL = 10 * 1024 * 1024;
 const OFFICIAL_CLAUDE_TAB_TIMEOUT = 10_000;
+const isOfficialClaudeTab = tab => /(?:^|-)claudeVSCodePanel$/iu.test(tab?.input?.viewType || '');
 const md = new MarkdownIt({ html: false, linkify: false, breaks: true });
 md.disable('image');
 const validateMarkdownLink = md.validateLink;
@@ -37,6 +38,12 @@ class ChatSessions extends TerminalSessions {
       const original = saved.find(s => s.id === session.id);
       if (typeof original?.backendId === 'string') session.backendId = original.backendId;
       if (session.access === 'official' && Number.isFinite(original?.officialOpenedAt)) session.officialOpenedAt = original.officialOpenedAt;
+      if (session.access === 'official' && typeof original?.officialWorkspace === 'string' &&
+          Number.isInteger(original.officialColumn) && Number.isInteger(original.officialIndex)) {
+        session.officialWorkspace = original.officialWorkspace;
+        session.officialColumn = original.officialColumn;
+        session.officialIndex = original.officialIndex;
+      }
       session.permission = permissionMode(original?.permission);
     }
     this.panelReady = new WeakMap(); this.panelBindings = new WeakMap(); this.vaultFolders = new WeakMap();
@@ -50,9 +57,10 @@ class ChatSessions extends TerminalSessions {
         for (const [id, tab] of this.officialTabs) {
           if (event.closed.includes(tab)) void this.closeOfficialChat(this.session(id)).catch(error => this.log(error.message));
         }
+        this.syncOfficialLayout();
         this.syncOfficialChat();
       }),
-      tabs?.onDidChangeTabGroups?.(() => this.syncOfficialChat())
+      tabs?.onDidChangeTabGroups?.(() => { this.syncOfficialLayout(); this.syncOfficialChat(); })
     ];
     this.normalizeSessionNames();
   }
@@ -97,6 +105,7 @@ class ChatSessions extends TerminalSessions {
     if (this.openingOfficialChat) return false;
     this.openingOfficialChat = true;
     try {
+      if (await this.focusRestoringOfficialTab(session)) return true;
       const sessionId = session.backendId;
       if (typeof sessionId === 'string' && claudeCli.UUID.test(sessionId) &&
           await claudeCli.conversationExists(sessionId)) {
@@ -142,6 +151,93 @@ class ChatSessions extends TerminalSessions {
     return extension;
   }
 
+  officialWorkspaceKey() {
+    return (vscode.workspace.workspaceFile || vscode.workspace.workspaceFolders?.[0]?.uri)?.toString() ?? '';
+  }
+
+  markOfficialPanel(extension, session, panel) {
+    // A nonexistent child of Claude's resources carries the ID in VS Code's
+    // serialized webview options without adding a new readable resource.
+    const marker = vscode.Uri.file(path.join(extension.extensionPath, 'resources', '.ai-agents-chat', session.id));
+    const options = panel.webview.options;
+    const roots = options.localResourceRoots || [];
+    if (!roots.some(root => root.toString() === marker.toString())) {
+      panel.webview.options = { ...options, localResourceRoots: [...roots, marker] };
+    }
+    session.officialWorkspace = this.officialWorkspaceKey();
+  }
+
+  startOfficialRestore() {
+    const workspace = this.officialWorkspaceKey();
+    const pending = new Map(this.sessions.filter(session => session.access === 'official' && !session.closed &&
+      session.officialWorkspace === workspace).map(session => [session.id, session]));
+    if (!pending.size) return;
+    const extension = vscode.extensions.getExtension('anthropic.claude-code');
+    if (!extension) return;
+    const first = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (first && first.scheme !== 'file') return;
+    const markerDirectory = path.join(extension.extensionPath, 'resources', '.ai-agents-chat');
+    this.restoringOfficial = pending;
+    try {
+      this.officialRestoreWatcher = watchOfficialClaudeRestores(extension, first?.fsPath ?? os.homedir(), panel => {
+        for (const uri of panel.webview.options.localResourceRoots || []) {
+          if (uri.scheme === 'file' && !path.relative(markerDirectory, path.dirname(uri.fsPath))) {
+            const session = pending.get(path.basename(uri.fsPath));
+            if (session) return session;
+          }
+        }
+      }, (session, panel) => {
+        this.markOfficialPanel(extension, session, panel);
+        this.trackOfficialConversation(session, panel);
+        const connect = () => {
+          if (!panel.active || this.officialTabs.has(session.id)) return;
+          const group = vscode.window.tabGroups.activeTabGroup;
+          const tab = group.activeTab;
+          if (group.viewColumn !== panel.viewColumn || !isOfficialClaudeTab(tab) || tab.label !== panel.title ||
+              [...this.officialTabs.values()].includes(tab)) return;
+          this.officialTabs.set(session.id, tab);
+          this.saveOfficialLayout(session, tab);
+          pending.delete(session.id);
+          if (!pending.size) this.officialRestoreWatcher?.dispose();
+          void this.persist().catch(error => this.log(error.message));
+        };
+        const view = panel.onDidChangeViewState(connect);
+        const tabs = vscode.window.tabGroups.onDidChangeTabs(connect);
+        panel.onDidDispose(() => { view.dispose(); tabs.dispose(); });
+        connect();
+      }, error => this.log(error.message));
+    } catch (error) { this.log(error.message); }
+  }
+
+  saveOfficialLayout(session, tab) {
+    if (session.officialWorkspace === undefined) return false;
+    const column = tab.group.viewColumn;
+    const index = tab.group.tabs.indexOf(tab);
+    if (index < 0 || (session.officialColumn === column && session.officialIndex === index)) return false;
+    session.officialColumn = column;
+    session.officialIndex = index;
+    return true;
+  }
+
+  syncOfficialLayout() {
+    let changed = false;
+    for (const [id, tab] of this.officialTabs) {
+      if (this.saveOfficialLayout(this.session(id), tab)) changed = true;
+    }
+    if (changed) void this.persist().catch(error => this.log(error.message));
+  }
+
+  async focusRestoringOfficialTab(session) {
+    if (!this.officialRestoreWatcher || !this.restoringOfficial?.has(session.id)) return false;
+    const group = vscode.window.tabGroups.all.find(item => item.viewColumn === session.officialColumn);
+    const tab = group?.tabs[session.officialIndex];
+    if (!isOfficialClaudeTab(tab) || [...this.officialTabs.values()].includes(tab)) return false;
+    if (!await this.focusOfficialTab(tab)) return false;
+    const deadline = Date.now() + 1500;
+    while (!this.officialTabs.has(session.id) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+    return this.officialTabs.has(session.id);
+  }
+
   async launchOfficialClaude(session, sessionId) {
     const extension = this.requireOfficialClaude();
     const root = await fs.realpath(session.root);
@@ -155,7 +251,6 @@ class ChatSessions extends TerminalSessions {
     await extension.activate();
     const groups = vscode.window.tabGroups;
     const currentTabs = () => groups.all.flatMap(group => group.tabs);
-    const isClaude = tab => /(?:^|-)claudeVSCodePanel$/iu.test(tab?.input?.viewType || '');
     const before = new Set(currentTabs());
     const commands = await vscode.commands.getCommands(true);
     const command = ['claude-vscode.primaryEditor.open', 'claude-vscode.editor.open'].find(id => commands.includes(id));
@@ -172,8 +267,8 @@ class ChatSessions extends TerminalSessions {
     do {
       const activeTab = groups.activeTabGroup.activeTab;
       tab = existingPanel
-        ? (existingPanel.active && isClaude(activeTab) && activeTab.label === existingPanel.title ? activeTab : undefined)
-        : currentTabs().find(item => !before.has(item) && isClaude(item));
+        ? (existingPanel.active && isOfficialClaudeTab(activeTab) && activeTab.label === existingPanel.title ? activeTab : undefined)
+        : currentTabs().find(item => !before.has(item) && isOfficialClaudeTab(item));
       if (tab) break;
       await new Promise(resolve => setTimeout(resolve, 50));
     } while (Date.now() < deadline);
@@ -186,6 +281,11 @@ class ChatSessions extends TerminalSessions {
     if (existingPanel && !capturedPanel) this.trackOfficialConversation(session, existingPanel);
     if (!this.sessions.includes(session)) this.sessions.push(session);
     this.officialTabs.set(session.id, tab);
+    const panel = capturedPanel || existingPanel;
+    if (panel) {
+      this.markOfficialPanel(extension, session, panel);
+      this.saveOfficialLayout(session, tab);
+    }
     delete session.closed;
     delete session.closedAt;
     this.activeId = session.id;
@@ -193,10 +293,6 @@ class ChatSessions extends TerminalSessions {
     await this.focusOfficialChat(session.id);
     await vscode.commands.executeCommand('workbench.action.keepEditor');
     await vscode.commands.executeCommand('multipleIAAgents.explorer.focus', { preserveFocus: true });
-    if (defaultFolder && !this.officialClaudeReloadNoticeShown) {
-      this.officialClaudeReloadNoticeShown = true;
-      void vscode.window.showInformationMessage(t('Al recargar VS Code, Claude Code puede restaurar esta pestaña con la carpeta principal.'));
-    }
     return true;
   }
 
@@ -247,6 +343,10 @@ class ChatSessions extends TerminalSessions {
   async focusOfficialChat(id) {
     const tab = this.officialTabs.get(id);
     if (!tab) return false;
+    return this.focusOfficialTab(tab);
+  }
+
+  async focusOfficialTab(tab) {
     const groups = vscode.window.tabGroups;
     if (groups.activeTabGroup !== tab.group) {
       const name = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth'][tab.group.viewColumn - 1];
@@ -882,6 +982,6 @@ class ChatSessions extends TerminalSessions {
     this.view?.webview.postMessage({ type: 'state', activeId: this.activeId, sessions: this.sessions.map(s => ({ ...s, connected: this.officialTabs.has(s.id) || this.panels.has(s.id) || vscode.window.terminals.includes(this.terminals.get(s.id)) })) });
     for (const session of this.sessions) if (this.panels.has(session.id)) { this.panels.get(session.id).title = session.name; this.pushChat(session); }
   }
-  dispose() { for (const subscription of this.officialTabSubscriptions) subscription?.dispose(); for (const run of this.running.values()) run.controller.abort(); for (const agent of this.backends.values()) agent.dispose(); }
+  dispose() { this.officialRestoreWatcher?.dispose(); for (const subscription of this.officialTabSubscriptions) subscription?.dispose(); for (const run of this.running.values()) run.controller.abort(); for (const agent of this.backends.values()) agent.dispose(); }
 }
 module.exports = { ChatSessions, MAX_CONTEXT };

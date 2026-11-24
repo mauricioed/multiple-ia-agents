@@ -1,3 +1,7 @@
+## 0.1.66
+
+- Correct the spelling of GitHub Markdown Vault in the chat toolbar.
+
 ## 0.1.65
 
 - Label custom Codex, Claude and Ollama chats in the new chat menus so they are distinct from Official Claude Code.

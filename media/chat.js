@@ -234,7 +234,7 @@ permission.append(option(t('\uD83D\uDD13 Acceso completo'), 'full'), option(t('\
 permission.addEventListener('change', () => rpc('permission', { value: permission.value }).catch(error));
 const vaultDialog = el('dialog', undefined, 'vault-dialog');
 vaultDialog.setAttribute('aria-labelledby', 'vault-dialog-title');
-const vaultLabel = 'GitHub Markdown Valut';
+const vaultLabel = 'GitHub Markdown Vault';
 const vault = button('', vaultLabel, () => {
   showVaultOptions();
   vaultDialog.showModal();
@@ -262,7 +262,7 @@ function showVaultOptions() {
   const footer = el('div', undefined, 'vault-actions');
   footer.append(button(t('Cancelar'), t('Cancelar'), () => vaultDialog.close()));
   actions.append(footer);
-  vaultDialog.replaceChildren(vaultHeading('GitHub Markdown Vault'), actions);
+  vaultDialog.replaceChildren(vaultHeading(vaultLabel), actions);
   actions.querySelector('button').focus();
 }
 function insertVaultTemplate(template) {

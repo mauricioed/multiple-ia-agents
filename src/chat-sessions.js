@@ -4,7 +4,7 @@ const vscode = require('vscode');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fileURLToPath } = require('node:url');
-const { randomUUID, randomBytes, createHash } = require('node:crypto');
+const { randomUUID, randomBytes } = require('node:crypto');
 const MarkdownIt = require('markdown-it');
 const { TerminalSessions } = require('./terminal-sessions');
 const core = require('./core');
@@ -16,7 +16,6 @@ const MAX_CONTEXT = 128 * 1024;
 const MAX_IMAGE = 5 * 1024 * 1024;
 const MAX_IMAGES_TOTAL = 10 * 1024 * 1024;
 const OFFICIAL_CLAUDE_TAB_TIMEOUT = 10_000;
-const OFFICIAL_CLAUDE_REQUEST_MAX_AGE = 5 * 60 * 1000;
 const md = new MarkdownIt({ html: false, linkify: false, breaks: true });
 md.disable('image');
 const validateMarkdownLink = md.validateLink;
@@ -42,6 +41,7 @@ class ChatSessions extends TerminalSessions {
     this.claudeKey = new ClaudeApiKey(context.secrets, vscode.window);
     this.officialTabs = new Map();
     const tabs = vscode.window.tabGroups;
+    this.lastActiveEditorTab = tabs?.activeTabGroup?.activeTab;
     this.officialTabSubscriptions = [
       tabs?.onDidChangeTabs?.(event => {
         for (const [id, tab] of this.officialTabs) {
@@ -83,7 +83,6 @@ class ChatSessions extends TerminalSessions {
     ], { title: t('Agente del nuevo chat') });
   }
   async openOfficialClaude(defaultPath) {
-    const extension = this.requireOfficialClaude();
     if (this.openingOfficialChat) return false;
     this.openingOfficialChat = true;
     try {
@@ -92,71 +91,20 @@ class ChatSessions extends TerminalSessions {
       const first = vscode.workspace.workspaceFolders?.[0]?.uri;
       const primary = first?.scheme === 'file' && await fs.realpath(first.fsPath).catch(() => undefined);
       if (primary && !path.relative(primary, root)) {
-        return await this.queueOfficialClaude(() => this.launchOfficialClaude(extension, root));
+        return await this.launchOfficialClaude(this.requireOfficialClaude(), root);
       }
 
-      const directory = this.officialClaudeLaunchDirectory(root);
-      await fs.mkdir(directory, { recursive: true });
-      const request = path.join(directory, `${Date.now()}-${randomUUID()}.launch`);
-      await fs.writeFile(request, '', { flag: 'wx' });
-      try {
-        await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(root), { forceNewWindow: true });
-      } catch (error) {
-        await fs.rm(request, { force: true });
-        throw error;
-      }
-      return true;
+      const openTerminal = t('Abrir Claude Code en terminal');
+      const choice = await vscode.window.showInformationMessage(
+        t('Claude Code abre los chats nativos en la carpeta principal de VS Code.'), {
+          modal: true,
+          detail: t('Puedes usar la carpeta seleccionada en una terminal integrada de esta ventana.\n{0}', root)
+        }, openTerminal
+      );
+      if (choice !== openTerminal) return false;
+      await vscode.commands.executeCommand('multipleIAAgents.explorer.focus', { preserveFocus: true });
+      return Boolean(await this.createTerminalSession('claude', root));
     } finally { this.openingOfficialChat = false; }
-  }
-
-  officialClaudeLaunchKey(root) {
-    const normalized = process.platform === 'win32' ? root.toLowerCase() : root;
-    return 'officialClaudeLaunch.' + createHash('sha256').update(normalized).digest('hex');
-  }
-
-  officialClaudeLaunchDirectory(root) {
-    return path.join(this.context.globalStorageUri.fsPath, this.officialClaudeLaunchKey(root));
-  }
-
-  queueOfficialClaude(action) {
-    const operation = (this.officialLaunchQueue || Promise.resolve()).catch(() => {}).then(action);
-    this.officialLaunchQueue = operation;
-    return operation;
-  }
-
-  async restoreOfficialClaudeLaunch() {
-    const first = vscode.workspace.workspaceFolders?.[0]?.uri;
-    if (first?.scheme !== 'file') return;
-    const root = await fs.realpath(first.fsPath).catch(() => undefined);
-    if (!root) return;
-    await this.queueOfficialClaude(async () => {
-      if (vscode.window.state?.focused === false) return;
-      const directory = this.officialClaudeLaunchDirectory(root);
-      const requests = await fs.readdir(directory).catch(error => {
-        if (error.code !== 'ENOENT') throw error;
-        return [];
-      });
-      for (const request of requests.sort()) {
-        const timestamp = /^(\d{13})-[\da-f-]{36}\.launch$/iu.exec(request)?.[1];
-        if (!timestamp) continue;
-        const claimed = await fs.unlink(path.join(directory, request)).then(() => true, error => {
-          if (error.code !== 'ENOENT') throw error;
-          return false;
-        });
-        if (claimed && Date.now() - Number(timestamp) < OFFICIAL_CLAUDE_REQUEST_MAX_AGE) {
-          await this.launchOfficialClaude(this.requireOfficialClaude(), root, true);
-        }
-      }
-
-      // Complete a folder switch requested by an earlier version of the extension.
-      const key = this.officialClaudeLaunchKey(root);
-      const requested = this.context.globalState.get(key);
-      if (!Number.isFinite(requested)) return;
-      await this.context.globalState.update(key, undefined);
-      if (Date.now() - requested < OFFICIAL_CLAUDE_REQUEST_MAX_AGE) {
-        await this.launchOfficialClaude(this.requireOfficialClaude(), root, true);
-      }
-    });
   }
 
   requireOfficialClaude() {
@@ -165,18 +113,13 @@ class ChatSessions extends TerminalSessions {
     return extension;
   }
 
-  async launchOfficialClaude(extension, root, registerRestored = false) {
+  async launchOfficialClaude(extension, root) {
     await vscode.commands.executeCommand('multipleIAAgents.explorer.focus', { preserveFocus: true });
     await extension.activate();
     const groups = vscode.window.tabGroups;
     const currentTabs = () => groups.all.flatMap(group => group.tabs);
     const isClaude = tab => /(?:^|-)claudeVSCodePanel$/iu.test(tab?.input?.viewType || '');
     const before = new Set(currentTabs());
-    if (registerRestored) {
-      for (const tab of before) {
-        if (isClaude(tab)) this.registerOfficialChat(tab, root);
-      }
-    }
     const commands = await vscode.commands.getCommands(true);
     const command = ['claude-vscode.primaryEditor.open', 'claude-vscode.editor.open'].find(id => commands.includes(id));
     if (!command) throw new Error(t('Actualiza la extensión oficial de Claude y recarga VS Code.'));
@@ -213,6 +156,8 @@ class ChatSessions extends TerminalSessions {
 
   syncOfficialChat() {
     const active = vscode.window.tabGroups.activeTabGroup.activeTab;
+    if (active === this.lastActiveEditorTab) return;
+    this.lastActiveEditorTab = active;
     const entry = [...this.officialTabs].find(([, tab]) => tab === active);
     if (entry && this.activeId !== entry[0]) {
       this.activeId = entry[0];

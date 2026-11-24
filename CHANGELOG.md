@@ -1,3 +1,7 @@
+## 0.1.60
+
+- Keep Claude Code chats in the current VS Code window. Offer an integrated Claude Code terminal when the selected folder differs from the primary workspace folder.
+
 ## 0.1.59
 
 - Keep the current Claude Code chat open when a new chat uses a different folder. Open the new chat in the VS Code window for its folder.

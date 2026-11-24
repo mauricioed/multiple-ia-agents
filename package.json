@@ -2,7 +2,7 @@
     "name": "multiple-ia-agents",
     "displayName": "Multiple AI Agent Chats",
     "description": "%extension.description%",
-    "version": "0.1.59",
+    "version": "0.1.60",
     "publisher": "Mauricio",
     "icon": "media/icon.png",
     "engines": {
@@ -333,7 +333,7 @@
         "anthropic.claude-code"
     ],
     "activationEvents": [
-        "*",
+        "onStartupFinished",
         "onWebviewPanel:multipleIAAgents.chat"
     ],
     "overrides": {

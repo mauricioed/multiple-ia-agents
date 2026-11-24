@@ -350,88 +350,44 @@ test('the official Claude action registers the new tab and its workspace folder'
   assert.equal(await f.manager.openOfficialClaude(), false);
   assert.deepEqual(calls, []);
 
-  const previousUri = fake.Uri;
-  fake.Uri = { file: fsPath => ({ scheme: 'file', fsPath }) };
-  t.after(() => { fake.Uri = previousUri; });
   const other = path.join(root, 'other');
   await fs.mkdir(other);
   f.manager.pickFolder = async () => other;
+  const { showInformationMessage } = fake.window;
+  t.after(() => { fake.window.showInformationMessage = showInformationMessage; });
+  const terminalAction = 'Abrir Claude Code en terminal';
+  fake.window.showInformationMessage = async (message, options, action) => {
+    assert.match(message, /carpeta principal/u);
+    assert.equal(options.modal, true);
+    assert.ok(options.detail.includes(other));
+    assert.equal(action, terminalAction);
+    return undefined;
+  };
+  assert.equal(await f.manager.openOfficialClaude(), false);
+  assert.deepEqual(calls, []);
+  assert.equal(f.manager.officialTabs.get(second.id), opened[1]);
+
+  group.activeTab = opened[1];
+  f.manager.syncOfficialChat();
+  fake.window.showInformationMessage = async () => terminalAction;
+  f.manager.createTerminalSession = async (provider, selectedRoot) => {
+    assert.equal(provider, 'claude');
+    assert.equal(selectedRoot, other);
+    f.manager.activeId = 'terminal';
+    f.manager.syncOfficialChat();
+    return { id: 'terminal' };
+  };
   assert.equal(await f.manager.openOfficialClaude(), true);
-  assert.deepEqual(calls, [['vscode.openFolder', fake.Uri.file(other), { forceNewWindow: true }]]);
+  assert.deepEqual(calls, [['multipleIAAgents.explorer.focus', { preserveFocus: true }]]);
+  assert.equal(f.manager.activeId, 'terminal');
   assert.equal(f.manager.officialTabs.get(second.id), opened[1]);
   assert.equal(f.manager.session(second.id).root, root);
-
-  fake.workspace.workspaceFolders = [{ uri: fake.Uri.file(other) }];
-  const destination = new ChatSessions(f.context);
-  destination.pickFolder = async () => assert.fail('The destination already has the chosen folder');
-  group.tabs.length = 0;
-  const viewCommand = 'multipleIAAgents.explorer.focus';
-  const execute = fake.commands.executeCommand;
-  fake.commands.executeCommand = async (...args) => {
-    if (args[0] !== 'claude-vscode.primaryEditor.open') return execute(...args);
-    assert.deepEqual(calls.at(-2), [viewCommand, { preserveFocus: true }]);
-    calls.push(args);
-    const tab = newTab();
-    opened.push(tab);
-    setTimeout(() => { group.tabs.push(tab); group.activeTab = tab; }, 2200);
-  };
-  await destination.restoreOfficialClaudeLaunch();
-  fake.commands.executeCommand = execute;
-  const transferred = destination.session(destination.activeId);
-  assert.equal(transferred.root, other);
-  assert.equal(destination.officialTabs.get(transferred.id), opened[2]);
-  await destination.restoreOfficialClaudeLaunch();
-  assert.equal(destination.officialTabs.size, 1);
-
-  const codexTab = { input: { viewType: 'openai.chat' }, group };
-  const previouslyOpened = newTab();
-  group.tabs.push(previouslyOpened, codexTab);
-  group.activeTab = codexTab;
-  fake.workspace.workspaceFolders = [{ uri: fake.Uri.file(root) }];
-  await f.manager.openOfficialClaude();
-  fake.workspace.workspaceFolders = [{ uri: fake.Uri.file(other) }];
-  const directory = destination.officialClaudeLaunchDirectory(other);
-  const expired = `${Date.now() - 6 * 60 * 1000}-00000000-0000-0000-0000-000000000000.launch`;
-  await fs.writeFile(path.join(directory, expired), '');
-  const { state } = fake.window;
-  t.after(() => { fake.window.state = state; });
-  fake.window.state = { focused: false };
-  await destination.restoreOfficialClaudeLaunch();
-  assert.equal((await fs.readdir(directory)).length, 2);
-  assert.equal(destination.officialTabs.size, 1);
-
-  fake.window.state = { focused: true };
-  calls.length = 0;
-  await Promise.all([destination.restoreOfficialClaudeLaunch(), destination.restoreOfficialClaudeLaunch()]);
-  assert.equal(calls.filter(call => call[0] === 'claude-vscode.primaryEditor.open').length, 1);
-  assert.deepEqual(await fs.readdir(directory), []);
-  assert.equal(destination.officialTabs.size, 3);
-  assert.equal(destination.officialTabs.get(destination.activeId), opened[3]);
-  assert.equal(destination.officialTabs.get(transferred.id), opened[2]);
-  assert.deepEqual(group.tabs, [opened[2], previouslyOpened, codexTab, opened[3]]);
-  const previous = [...destination.officialTabs].find(([, tab]) => tab === previouslyOpened)[0];
-  await destination.selectSession(previous, true, 1);
-  assert.equal(group.activeTab, previouslyOpened);
-  assert.equal(group.tabs.length, 4);
-
-  const key = destination.officialClaudeLaunchKey(other);
-  await f.context.globalState.update(key, Date.now() - 6 * 60 * 1000);
-  const callsBeforeExpiry = calls.length;
-  await destination.restoreOfficialClaudeLaunch();
-  assert.equal(calls.length, callsBeforeExpiry);
-  assert.equal(f.context.globalState.get(key), undefined);
 
   fake.workspace.workspaceFolders = undefined;
   calls.length = 0;
   assert.equal(await f.manager.openOfficialClaude(), true);
-  assert.deepEqual(calls, [['vscode.openFolder', fake.Uri.file(other), { forceNewWindow: true }]]);
-
-  const executeCommand = fake.commands.executeCommand;
-  fake.commands.executeCommand = async () => { throw new Error('Could not open folder'); };
-  await assert.rejects(f.manager.openOfficialClaude(), /Could not open folder/);
-  assert.equal(f.context.globalState.get(key), undefined);
-  assert.equal((await fs.readdir(directory)).length, 1, 'The failed launch removes only its own request');
-  fake.commands.executeCommand = executeCommand;
+  assert.deepEqual(calls, [['multipleIAAgents.explorer.focus', { preserveFocus: true }]]);
+  await f.manager.closeSession(second.id);
 });
 
 test('Ollama opens without models and leaves download as an explicit user action', async t => {

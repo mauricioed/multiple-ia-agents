@@ -110,16 +110,6 @@ function activate(context) {
       if (entry) manager.selectSession(entry[0], false).catch(error => vscode.window.showErrorMessage(error.message));
     })
   );
-  const receiveClaudeLaunches = () => {
-    void manager.restoreOfficialClaudeLaunch().catch(error => {
-      manager.log(error.stack || error.message);
-      vscode.window.showErrorMessage(error.message);
-    });
-  };
-  context.subscriptions.push(vscode.window.onDidChangeWindowState(state => {
-    if (state.focused) receiveClaudeLaunches();
-  }));
-  receiveClaudeLaunches();
   return { manager };
 }
 module.exports = { activate, WorkspaceManager };

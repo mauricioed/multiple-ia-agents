@@ -122,10 +122,7 @@ class ChatSessions extends TerminalSessions {
       if (!Number.isFinite(requested)) return;
       await this.context.globalState.update(key, undefined);
       if (Date.now() - requested > 5 * 60 * 1000) return;
-      const extension = this.requireOfficialClaude();
-      // Folder changes reload the workbench with its last sidebar selected.
-      await vscode.commands.executeCommand('multipleIAAgents.explorer.focus', { preserveFocus: true });
-      await this.launchOfficialClaude(extension, root, true);
+      await this.launchOfficialClaude(this.requireOfficialClaude(), root, true);
     } finally { this.openingOfficialChat = false; }
   }
 
@@ -135,30 +132,30 @@ class ChatSessions extends TerminalSessions {
     return extension;
   }
 
-  async launchOfficialClaude(extension, root, reuseRestored = false) {
+  async launchOfficialClaude(extension, root, registerRestored = false) {
+    await vscode.commands.executeCommand('multipleIAAgents.explorer.focus', { preserveFocus: true });
     await extension.activate();
     const groups = vscode.window.tabGroups;
     const currentTabs = () => groups.all.flatMap(group => group.tabs);
     const isClaude = tab => /(?:^|-)claudeVSCodePanel$/iu.test(tab?.input?.viewType || '');
-    const restoredTabs = reuseRestored ? currentTabs().filter(isClaude) : [];
-    for (const restoredTab of restoredTabs) this.registerOfficialChat(restoredTab, root);
-    const activeTab = groups.activeTabGroup.activeTab;
-    let tab = restoredTabs.includes(activeTab) ? activeTab : restoredTabs[0];
-
-    if (!tab) {
-      const commands = await vscode.commands.getCommands(true);
-      const command = ['claude-vscode.primaryEditor.open', 'claude-vscode.editor.open'].find(id => commands.includes(id));
-      if (!command) throw new Error(t('Actualiza la extensión oficial de Claude y recarga VS Code.'));
-      const before = new Set(currentTabs());
-      await vscode.commands.executeCommand(command);
-      const deadline = Date.now() + OFFICIAL_CLAUDE_TAB_TIMEOUT;
-      do {
-        tab = currentTabs().find(item => !before.has(item) && isClaude(item));
-        if (tab) break;
-        await new Promise(resolve => setTimeout(resolve, 50));
-      } while (Date.now() < deadline);
-      if (!tab) throw new Error(t('No se pudo identificar la pestaña nueva de Claude Code.'));
+    const before = new Set(currentTabs());
+    if (registerRestored) {
+      for (const tab of before) {
+        if (isClaude(tab)) this.registerOfficialChat(tab, root);
+      }
     }
+    const commands = await vscode.commands.getCommands(true);
+    const command = ['claude-vscode.primaryEditor.open', 'claude-vscode.editor.open'].find(id => commands.includes(id));
+    if (!command) throw new Error(t('Actualiza la extensión oficial de Claude y recarga VS Code.'));
+    await vscode.commands.executeCommand(command);
+    let tab;
+    const deadline = Date.now() + OFFICIAL_CLAUDE_TAB_TIMEOUT;
+    do {
+      tab = currentTabs().find(item => !before.has(item) && isClaude(item));
+      if (tab) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    } while (Date.now() < deadline);
+    if (!tab) throw new Error(t('No se pudo identificar la pestaña nueva de Claude Code.'));
 
     const session = this.registerOfficialChat(tab, root);
     this.activeId = session.id;

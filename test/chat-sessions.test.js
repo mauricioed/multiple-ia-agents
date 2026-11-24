@@ -324,7 +324,8 @@ test('the official Claude action registers the new tab and its workspace folder'
   const panel = { webview: { postMessage: reply => replies.push(reply) } };
   f.manager.panels.set(f.session.id, panel);
   await f.manager.handleChat(f.session, panel, { action: 'openOfficialClaude', requestId: 1 });
-  assert.deepEqual(calls, ['activate', ['claude-vscode.primaryEditor.open'], ['workbench.action.openEditorAtIndex', 0],
+  assert.deepEqual(calls, [['multipleIAAgents.explorer.focus', { preserveFocus: true }],
+    'activate', ['claude-vscode.primaryEditor.open'], ['workbench.action.openEditorAtIndex', 0],
     ['workbench.action.keepEditor'], ['multipleIAAgents.explorer.focus', { preserveFocus: true }]]);
   assert.equal(replies.at(-1).result, true);
   const session = f.manager.session(f.manager.activeId);
@@ -390,16 +391,14 @@ test('the official Claude action registers the new tab and its workspace folder'
   await f.context.globalState.update(restored.officialClaudeLaunchKey(other), Date.now());
   calls.length = 0;
   await Promise.all([restored.restoreOfficialClaudeLaunch(), restored.restoreOfficialClaudeLaunch()]);
-  assert.equal(calls.filter(call => call[0] === 'claude-vscode.primaryEditor.open').length, 0);
-  assert.equal(restored.officialTabs.size, 2);
-  assert.equal(restored.officialTabs.get(restored.activeId), opened[2]);
-  assert.deepEqual(group.tabs, [opened[2], previouslyOpened, codexTab]);
-
-  group.activeTab = previouslyOpened;
-  await f.context.globalState.update(restored.officialClaudeLaunchKey(other), Date.now());
-  await restored.restoreOfficialClaudeLaunch();
-  assert.equal(restored.officialTabs.get(restored.activeId), previouslyOpened);
-  assert.equal(restored.officialTabs.size, 2);
+  assert.equal(calls.filter(call => call[0] === 'claude-vscode.primaryEditor.open').length, 1);
+  assert.equal(restored.officialTabs.size, 3);
+  assert.equal(restored.officialTabs.get(restored.activeId), opened[3]);
+  assert.deepEqual(group.tabs, [opened[2], previouslyOpened, codexTab, opened[3]]);
+  const previous = [...restored.officialTabs].find(([, tab]) => tab === previouslyOpened)[0];
+  await restored.selectSession(previous, true, 1);
+  assert.equal(group.activeTab, previouslyOpened);
+  assert.equal(group.tabs.length, 4);
 
   const key = destination.officialClaudeLaunchKey(other);
   await f.context.globalState.update(key, Date.now() - 6 * 60 * 1000);

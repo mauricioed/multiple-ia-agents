@@ -1,3 +1,7 @@
+## 0.1.58
+
+- Show AI Agents while Claude Code opens and create one separate chat for each new-chat request, including after changing folders.
+
 ## 0.1.57
 
 - Reuse a restored Claude Code editor when returning to its folder from AI Agents.

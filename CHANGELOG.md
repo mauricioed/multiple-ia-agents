@@ -1,3 +1,7 @@
+## 0.1.59
+
+- Keep the current Claude Code chat open when a new chat uses a different folder. Open the new chat in the VS Code window for its folder.
+
 ## 0.1.58
 
 - Show AI Agents while Claude Code opens and create one separate chat for each new-chat request, including after changing folders.

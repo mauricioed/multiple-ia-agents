@@ -344,7 +344,6 @@ test('the official Claude action registers the new tab and its workspace folder'
   await f.manager.closeSession(session.id);
   assert.equal(f.manager.sessions.some(item => item.id === session.id), false);
   assert.equal(f.manager.officialTabs.get(second.id), opened[1]);
-  await f.manager.closeSession(second.id);
 
   calls.length = 0;
   f.manager.pickFolder = async () => undefined;
@@ -358,8 +357,9 @@ test('the official Claude action registers the new tab and its workspace folder'
   await fs.mkdir(other);
   f.manager.pickFolder = async () => other;
   assert.equal(await f.manager.openOfficialClaude(), true);
-  assert.deepEqual(calls, [['vscode.openFolder', fake.Uri.file(other), { forceReuseWindow: true }]]);
-  assert.equal(f.manager.officialTabs.size, 0);
+  assert.deepEqual(calls, [['vscode.openFolder', fake.Uri.file(other), { forceNewWindow: true }]]);
+  assert.equal(f.manager.officialTabs.get(second.id), opened[1]);
+  assert.equal(f.manager.session(second.id).root, root);
 
   fake.workspace.workspaceFolders = [{ uri: fake.Uri.file(other) }];
   const destination = new ChatSessions(f.context);
@@ -387,16 +387,30 @@ test('the official Claude action registers the new tab and its workspace folder'
   const previouslyOpened = newTab();
   group.tabs.push(previouslyOpened, codexTab);
   group.activeTab = codexTab;
-  const restored = new ChatSessions(f.context);
-  await f.context.globalState.update(restored.officialClaudeLaunchKey(other), Date.now());
+  fake.workspace.workspaceFolders = [{ uri: fake.Uri.file(root) }];
+  await f.manager.openOfficialClaude();
+  fake.workspace.workspaceFolders = [{ uri: fake.Uri.file(other) }];
+  const directory = destination.officialClaudeLaunchDirectory(other);
+  const expired = `${Date.now() - 6 * 60 * 1000}-00000000-0000-0000-0000-000000000000.launch`;
+  await fs.writeFile(path.join(directory, expired), '');
+  const { state } = fake.window;
+  t.after(() => { fake.window.state = state; });
+  fake.window.state = { focused: false };
+  await destination.restoreOfficialClaudeLaunch();
+  assert.equal((await fs.readdir(directory)).length, 2);
+  assert.equal(destination.officialTabs.size, 1);
+
+  fake.window.state = { focused: true };
   calls.length = 0;
-  await Promise.all([restored.restoreOfficialClaudeLaunch(), restored.restoreOfficialClaudeLaunch()]);
+  await Promise.all([destination.restoreOfficialClaudeLaunch(), destination.restoreOfficialClaudeLaunch()]);
   assert.equal(calls.filter(call => call[0] === 'claude-vscode.primaryEditor.open').length, 1);
-  assert.equal(restored.officialTabs.size, 3);
-  assert.equal(restored.officialTabs.get(restored.activeId), opened[3]);
+  assert.deepEqual(await fs.readdir(directory), []);
+  assert.equal(destination.officialTabs.size, 3);
+  assert.equal(destination.officialTabs.get(destination.activeId), opened[3]);
+  assert.equal(destination.officialTabs.get(transferred.id), opened[2]);
   assert.deepEqual(group.tabs, [opened[2], previouslyOpened, codexTab, opened[3]]);
-  const previous = [...restored.officialTabs].find(([, tab]) => tab === previouslyOpened)[0];
-  await restored.selectSession(previous, true, 1);
+  const previous = [...destination.officialTabs].find(([, tab]) => tab === previouslyOpened)[0];
+  await destination.selectSession(previous, true, 1);
   assert.equal(group.activeTab, previouslyOpened);
   assert.equal(group.tabs.length, 4);
 
@@ -410,12 +424,13 @@ test('the official Claude action registers the new tab and its workspace folder'
   fake.workspace.workspaceFolders = undefined;
   calls.length = 0;
   assert.equal(await f.manager.openOfficialClaude(), true);
-  assert.deepEqual(calls, [['vscode.openFolder', fake.Uri.file(other), { forceReuseWindow: true }]]);
+  assert.deepEqual(calls, [['vscode.openFolder', fake.Uri.file(other), { forceNewWindow: true }]]);
 
   const executeCommand = fake.commands.executeCommand;
   fake.commands.executeCommand = async () => { throw new Error('Could not open folder'); };
   await assert.rejects(f.manager.openOfficialClaude(), /Could not open folder/);
   assert.equal(f.context.globalState.get(key), undefined);
+  assert.equal((await fs.readdir(directory)).length, 1, 'The failed launch removes only its own request');
   fake.commands.executeCommand = executeCommand;
 });
 

@@ -16,6 +16,7 @@ const MAX_CONTEXT = 128 * 1024;
 const MAX_IMAGE = 5 * 1024 * 1024;
 const MAX_IMAGES_TOTAL = 10 * 1024 * 1024;
 const OFFICIAL_CLAUDE_TAB_TIMEOUT = 10_000;
+const OFFICIAL_CLAUDE_REQUEST_MAX_AGE = 5 * 60 * 1000;
 const md = new MarkdownIt({ html: false, linkify: false, breaks: true });
 md.disable('image');
 const validateMarkdownLink = md.validateLink;
@@ -90,14 +91,18 @@ class ChatSessions extends TerminalSessions {
       if (!root) return false;
       const first = vscode.workspace.workspaceFolders?.[0]?.uri;
       const primary = first?.scheme === 'file' && await fs.realpath(first.fsPath).catch(() => undefined);
-      if (primary && !path.relative(primary, root)) return await this.launchOfficialClaude(extension, root);
+      if (primary && !path.relative(primary, root)) {
+        return await this.queueOfficialClaude(() => this.launchOfficialClaude(extension, root));
+      }
 
-      const key = this.officialClaudeLaunchKey(root);
-      await this.context.globalState.update(key, Date.now());
+      const directory = this.officialClaudeLaunchDirectory(root);
+      await fs.mkdir(directory, { recursive: true });
+      const request = path.join(directory, `${Date.now()}-${randomUUID()}.launch`);
+      await fs.writeFile(request, '', { flag: 'wx' });
       try {
-        await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(root), { forceReuseWindow: true });
+        await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(root), { forceNewWindow: true });
       } catch (error) {
-        await this.context.globalState.update(key, undefined);
+        await fs.rm(request, { force: true });
         throw error;
       }
       return true;
@@ -109,21 +114,49 @@ class ChatSessions extends TerminalSessions {
     return 'officialClaudeLaunch.' + createHash('sha256').update(normalized).digest('hex');
   }
 
+  officialClaudeLaunchDirectory(root) {
+    return path.join(this.context.globalStorageUri.fsPath, this.officialClaudeLaunchKey(root));
+  }
+
+  queueOfficialClaude(action) {
+    const operation = (this.officialLaunchQueue || Promise.resolve()).catch(() => {}).then(action);
+    this.officialLaunchQueue = operation;
+    return operation;
+  }
+
   async restoreOfficialClaudeLaunch() {
     const first = vscode.workspace.workspaceFolders?.[0]?.uri;
     if (first?.scheme !== 'file') return;
     const root = await fs.realpath(first.fsPath).catch(() => undefined);
     if (!root) return;
-    if (this.openingOfficialChat) return;
-    this.openingOfficialChat = true;
-    try {
+    await this.queueOfficialClaude(async () => {
+      if (vscode.window.state?.focused === false) return;
+      const directory = this.officialClaudeLaunchDirectory(root);
+      const requests = await fs.readdir(directory).catch(error => {
+        if (error.code !== 'ENOENT') throw error;
+        return [];
+      });
+      for (const request of requests.sort()) {
+        const timestamp = /^(\d{13})-[\da-f-]{36}\.launch$/iu.exec(request)?.[1];
+        if (!timestamp) continue;
+        const claimed = await fs.unlink(path.join(directory, request)).then(() => true, error => {
+          if (error.code !== 'ENOENT') throw error;
+          return false;
+        });
+        if (claimed && Date.now() - Number(timestamp) < OFFICIAL_CLAUDE_REQUEST_MAX_AGE) {
+          await this.launchOfficialClaude(this.requireOfficialClaude(), root, true);
+        }
+      }
+
+      // Complete a folder switch requested by an earlier version of the extension.
       const key = this.officialClaudeLaunchKey(root);
       const requested = this.context.globalState.get(key);
       if (!Number.isFinite(requested)) return;
       await this.context.globalState.update(key, undefined);
-      if (Date.now() - requested > 5 * 60 * 1000) return;
-      await this.launchOfficialClaude(this.requireOfficialClaude(), root, true);
-    } finally { this.openingOfficialChat = false; }
+      if (Date.now() - requested < OFFICIAL_CLAUDE_REQUEST_MAX_AGE) {
+        await this.launchOfficialClaude(this.requireOfficialClaude(), root, true);
+      }
+    });
   }
 
   requireOfficialClaude() {

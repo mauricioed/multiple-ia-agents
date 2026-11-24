@@ -383,16 +383,23 @@ test('the official Claude action registers the new tab and its workspace folder'
   assert.equal(destination.officialTabs.size, 1);
 
   const codexTab = { input: { viewType: 'openai.chat' }, group };
-  group.tabs.push(codexTab);
+  const previouslyOpened = newTab();
+  group.tabs.push(previouslyOpened, codexTab);
   group.activeTab = codexTab;
   const restored = new ChatSessions(f.context);
   await f.context.globalState.update(restored.officialClaudeLaunchKey(other), Date.now());
   calls.length = 0;
   await Promise.all([restored.restoreOfficialClaudeLaunch(), restored.restoreOfficialClaudeLaunch()]);
-  assert.equal(calls.filter(call => call[0] === 'claude-vscode.primaryEditor.open').length, 1);
+  assert.equal(calls.filter(call => call[0] === 'claude-vscode.primaryEditor.open').length, 0);
   assert.equal(restored.officialTabs.size, 2);
-  assert.equal(restored.officialTabs.get(restored.activeId), opened[3]);
-  assert.deepEqual(group.tabs, [opened[2], codexTab, opened[3]]);
+  assert.equal(restored.officialTabs.get(restored.activeId), opened[2]);
+  assert.deepEqual(group.tabs, [opened[2], previouslyOpened, codexTab]);
+
+  group.activeTab = previouslyOpened;
+  await f.context.globalState.update(restored.officialClaudeLaunchKey(other), Date.now());
+  await restored.restoreOfficialClaudeLaunch();
+  assert.equal(restored.officialTabs.get(restored.activeId), previouslyOpened);
+  assert.equal(restored.officialTabs.size, 2);
 
   const key = destination.officialClaudeLaunchKey(other);
   await f.context.globalState.update(key, Date.now() - 6 * 60 * 1000);

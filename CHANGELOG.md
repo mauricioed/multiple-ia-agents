@@ -1,3 +1,7 @@
+## 0.1.57
+
+- Reuse a restored Claude Code editor when returning to its folder from AI Agents.
+
 ## 0.1.56
 
 - Reveal AI Agents when opening Claude Code in a different folder and show the linked chat once its editor is available, including on slower VS Code startups.

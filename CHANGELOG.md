@@ -1,3 +1,7 @@
+## 0.1.62
+
+- Keep official Claude Code entries in AI Agents after closing VS Code. Reopen a saved native conversation with its original folder when Claude reports its session ID.
+
 ## 0.1.61
 
 - Open native Claude Code tabs for distinct folders in the same VS Code window with the verified Claude Code 2.1.331 build on Windows x64.

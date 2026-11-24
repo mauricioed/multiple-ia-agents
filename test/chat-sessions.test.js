@@ -340,9 +340,38 @@ test('the official Claude action registers the new tab and its workspace folder'
   assert.equal(group.activeTab, opened[1]);
   await f.manager.selectSession(session.id, true, 1);
   assert.deepEqual(calls.at(-1), ['workbench.action.openEditorAtIndex', 0]);
-  assert.equal(new ChatSessions(f.context).sessions.some(item => item.id === session.id), false);
+  const restored = new ChatSessions(f.context);
+  assert.equal(restored.session(session.id).access, 'official');
+  assert.equal(restored.session(session.id).root, root);
+  assert.equal(restored.session(session.id).mode, undefined);
+  assert.equal(restored.activeId, session.id);
+  assert.equal(restored.officialTabs.size, 0);
+
+  const { showInformationMessage } = fake.window;
+  t.after(() => { fake.window.showInformationMessage = showInformationMessage; });
+  fake.window.showInformationMessage = async () => undefined;
+  await restored.selectSession(session.id, true, 1);
+  assert.equal(restored.officialTabs.size, 0);
+  fake.window.showInformationMessage = async (_message, _options, action) => action;
+  restored.pickFolder = async () => assert.fail('A saved chat must use its original folder');
+  await restored.selectSession(session.id, true, 1);
+  assert.equal(restored.officialTabs.get(session.id), opened[2]);
+  assert.equal(restored.sessions.filter(item => item.access === 'official').length, 2);
+
+  let receive;
+  restored.trackOfficialConversation(restored.session(session.id), {
+    webview: { onDidReceiveMessage: callback => { receive = callback; return { dispose() {} }; } },
+    onDidDispose() {}
+  });
+  const backendId = '1a107767-b4ea-4825-9d75-3cb633d72a9a';
+  receive({ request: { type: 'update_session_state', sessionId: backendId, idConfirmed: false } });
+  assert.equal(restored.session(session.id).backendId, undefined);
+  receive({ request: { type: 'update_session_state', sessionId: backendId, idConfirmed: true } });
+  await restored.persist();
+  assert.equal(new ChatSessions(f.context).session(session.id).backendId, backendId);
+
   await f.manager.closeSession(session.id);
-  assert.equal(f.manager.sessions.some(item => item.id === session.id), false);
+  assert.equal(new ChatSessions(f.context).session(session.id).closed, true);
   assert.equal(f.manager.officialTabs.get(second.id), opened[1]);
 
   calls.length = 0;

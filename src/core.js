@@ -46,11 +46,12 @@ function restoreSessions(value) {
   }).map(({ id, name, root, provider, nativeAgent, closed, closedAt, model, needsAgentSelection, mode, access }) => {
     const agent = provider === 'vscode' ? ['codex', 'claude', 'ollama'].includes(nativeAgent) ? nativeAgent : 'terminal' : provider;
     const apiKey = agent === 'claude' && access === 'apiKey' && mode !== 'terminal';
+    const official = agent === 'claude' && access === 'official' && mode !== 'terminal';
     return { id, name, root, provider: agent,
     ...(closed === true ? { closed: true, ...(Number.isFinite(closedAt) ? { closedAt } : {}) } : {}),
-    ...(apiKey ? { access: 'apiKey' } : {}),
-    // Claude chats without the user's API key run the official Claude Code CLI in a terminal.
-    ...(mode === 'terminal' || provider === 'terminal' || (agent === 'claude' && !apiKey) ? { mode: 'terminal' } : {}),
+      ...(apiKey || official ? { access } : {}),
+      // Older Claude entries with neither access mode were terminal sessions.
+      ...(mode === 'terminal' || provider === 'terminal' || (agent === 'claude' && !apiKey && !official) ? { mode: 'terminal' } : {}),
     ...(typeof model === 'string' && model && !/[\x00\r\n]/u.test(model) && !model.startsWith('-') ? { model } : {}),
     ...(needsAgentSelection === true || provider === 'vscode' && !['codex', 'claude', 'ollama'].includes(nativeAgent) ? { needsAgentSelection: true } : {}) };
   });

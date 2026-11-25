@@ -318,7 +318,7 @@ test('the official Claude action registers the new tab and its workspace folder'
       if (args[0] === 'workbench.action.openEditorAtIndex') group.activeTab = group.tabs[args[1]];
     }
   };
-  f.manager.pickFolder = async defaultPath => { assert.equal(defaultPath, f.session.root); return root; };
+  f.manager.pickFolder = async defaultPath => { assert.equal(await fs.realpath(defaultPath), root); return root; };
   f.manager.createTerminalSession = async () => assert.fail('Native access must open a chat');
   const replies = [];
   const panel = { webview: { postMessage: reply => replies.push(reply) } };
@@ -780,9 +780,17 @@ test('opens an existing Markdown vault and lists its nested documents independen
   t.after(() => { fake.Uri = Uri; });
   const { showSaveDialog } = fake.window;
   t.after(() => { fake.window.showSaveDialog = showSaveDialog; });
-  fake.window.showSaveDialog = async () => ({ scheme: 'file', fsPath: path.join(root, 'Export.md') });
+  const vaultAlias = path.join(f.root, 'vault-alias');
+  await fs.symlink(root, vaultAlias, process.platform === 'win32' ? 'junction' : 'dir');
+  fake.window.showSaveDialog = async () => ({ scheme: 'file', fsPath: path.join(vaultAlias, 'Export.md') });
   assert.equal(await f.manager.vault.saveConversation(f.session, [{ role: 'user', text: 'Saved question' }]), true);
   assert.match(await fs.readFile(path.join(root, 'Export.md'), 'utf8'), /Saved question/u);
+  const escape = path.join(root, 'escape');
+  await fs.symlink(f.root, escape, process.platform === 'win32' ? 'junction' : 'dir');
+  for (const folder of [escape, path.join(vaultAlias, '.git')]) {
+    fake.window.showSaveDialog = async () => ({ scheme: 'file', fsPath: path.join(folder, 'Blocked.md') });
+    await assert.rejects(f.manager.vault.saveConversation(f.session, [{ role: 'user', text: 'Blocked' }]), /Markdown.*Vault/u);
+  }
   const originalFs = fake.workspace.fs;
   const originalWarning = fake.window.showWarningMessage;
   t.after(() => { fake.workspace.fs = originalFs; fake.window.showWarningMessage = originalWarning; });

@@ -1,3 +1,7 @@
+## 0.1.69
+
+- Resolve equivalent Windows paths when saving to GitHub Markdown Vault and verifying the Claude Code folder picker.
+
 ## 0.1.68
 
 - Update the VS Code description in English and Spanish to include native Claude Code tabs and GitHub Markdown Vault.

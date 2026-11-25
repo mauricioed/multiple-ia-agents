@@ -93,7 +93,6 @@ async function saveConversation(root, session, history) {
   });
   if (!file) return;
   const target = /\.(md|markdown)$/iu.test(file.fsPath) ? file.fsPath : `${file.fsPath}.md`;
-  insideVault(root, target);
   const folder = await fs.realpath(path.dirname(target));
   const destination = path.join(folder, path.basename(target));
   insideVault(root, destination);
